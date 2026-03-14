@@ -1,0 +1,22 @@
+{
+  "name": "KasiConnect Dashboard",
+  "short_name": "KasiConnect",
+  "description": "KasiConnect vendor dashboard — manage your spaza shop or kasi eatery orders",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#f97316",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
