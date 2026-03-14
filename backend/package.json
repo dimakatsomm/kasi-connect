@@ -24,7 +24,7 @@
     "ioredis": "^5.3.2",
     "kafkajs": "^2.2.4",
     "morgan": "^1.10.0",
-    "multer": "^1.4.5-lts.1",
+    "multer": "^2.1.1",
     "pg": "^8.11.3",
     "pg-pool": "^3.6.1",
     "uuid": "^9.0.0",
@@ -39,7 +39,9 @@
   },
   "jest": {
     "testEnvironment": "node",
-    "setupFiles": ["./tests/setup.js"],
+    "setupFiles": [
+      "./tests/setup.js"
+    ],
     "testMatch": [
       "**/tests/**/*.test.js"
     ],
