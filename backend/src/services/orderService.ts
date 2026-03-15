@@ -164,16 +164,33 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderRow> 
   }
 }
 
+const VALID_ORDER_STATUSES: ReadonlySet<string> = new Set<OrderStatus>([
+  'pending',
+  'confirmed',
+  'preparing',
+  'ready',
+  'delivered',
+  'cancelled',
+]);
+
 /**
  * Get orders for a vendor (for the dashboard kanban board).
  *
  * @param vendorId
  * @param statuses  Filter by status array
+ * @throws {Error} if any of the provided statuses is not a valid OrderStatus
  */
 export async function getVendorOrders(
   vendorId: string,
   statuses: string[] = ['confirmed', 'preparing', 'ready']
 ): Promise<OrderWithItems[]> {
+  const invalid = statuses.filter((s) => !VALID_ORDER_STATUSES.has(s));
+  if (invalid.length > 0) {
+    throw Object.assign(new Error(`Invalid order status values: ${invalid.join(', ')}`), {
+      statusCode: 400,
+    });
+  }
+
   const statusFilter = statuses as OrderStatus[];
 
   const orders = await prisma.order.findMany({

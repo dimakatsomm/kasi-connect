@@ -1,4 +1,5 @@
-import { Decimal } from '@prisma/client/runtime/library';
+import { Prisma } from '@prisma/client';
+const { Decimal } = Prisma;
 import { SESSION_STATES, VALID_TRANSITIONS } from '../src/services/sessionStates';
 
 // Mock ioredis
