@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchOrders, updateOrderStatus, fetchProducts, updateProduct, deleteProduct } from '@/lib/api';
-import type { Order, OrderStatus, Product } from '@/types';
+import type { OrderStatus, Product } from '@/types';
 
 // ── Orders ────────────────────────────────────────────────────────────────────
 

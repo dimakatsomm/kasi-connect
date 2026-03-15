@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
+import Image from 'next/image';
 import type { Product } from '@/types';
-import { useProducts, useUpdateProduct, useDeleteProduct } from '@/hooks/useApi';
+import { useProducts, useUpdateProduct } from '@/hooks/useApi';
 import { publishDailySpecial } from '@/lib/api';
 
 interface ProductManagementProps {
@@ -12,7 +13,6 @@ interface ProductManagementProps {
 export function ProductManagement({ vendorId }: ProductManagementProps) {
   const { data: products = [], isLoading, error } = useProducts(vendorId);
   const updateProduct = useUpdateProduct();
-  const deleteProduct = useDeleteProduct();
   const [specialModal, setSpecialModal] = useState<string | null>(null);
   const [specialMessage, setSpecialMessage] = useState('');
   const [broadcastLoading, setBroadcastLoading] = useState(false);
@@ -81,11 +81,15 @@ export function ProductManagement({ vendorId }: ProductManagementProps) {
           >
             {/* Product image */}
             {product.image_url ? (
-              <img
-                src={product.image_url}
-                alt={product.name}
-                className="w-full h-36 object-cover rounded-md mb-3"
-              />
+              <div className="relative w-full h-36 mb-3">
+                <Image
+                  src={product.image_url}
+                  alt={product.name}
+                  fill
+                  className="object-cover rounded-md"
+                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                />
+              </div>
             ) : (
               <div className="w-full h-36 bg-gray-100 rounded-md mb-3 flex items-center justify-center text-gray-400 text-3xl">
                 🛒
