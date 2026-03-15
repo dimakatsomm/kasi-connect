@@ -3,7 +3,7 @@ import { body, param, validationResult } from 'express-validator';
 import { Prisma } from '@prisma/client';
 import prisma from '../db';
 import logger from '../config/logger';
-import type { VendorRow, VendorType } from '../types';
+import type { VendorType } from '../types';
 
 const router = Router();
 
@@ -159,18 +159,28 @@ router.patch(
     }
 
     const addressValue = readField('address');
-    if (addressValue !== undefined) {
-      data.address = addressValue as string;
+    if (typeof addressValue === 'string' || addressValue === null) {
+      data.address = addressValue;
     }
 
     const whatsappValue = readField('whatsapp_number');
-    if (whatsappValue !== undefined) {
-      data.whatsapp_number = whatsappValue as string;
+    if (typeof whatsappValue === 'string' || whatsappValue === null) {
+      data.whatsapp_number = whatsappValue;
     }
 
     const deliveryFeeValue = readField('delivery_fee');
     if (deliveryFeeValue !== undefined) {
-      data.delivery_fee = deliveryFeeValue as number;
+      const parsed =
+        typeof deliveryFeeValue === 'number'
+          ? deliveryFeeValue
+          : typeof deliveryFeeValue === 'string'
+            ? parseFloat(deliveryFeeValue)
+            : NaN;
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        res.status(400).json({ error: 'Delivery fee must be a valid number greater than or equal to 0 (e.g. 25 or 9.99)' });
+        return;
+      }
+      data.delivery_fee = parsed;
     }
 
     const isActiveValue = readField('is_active');

@@ -6,7 +6,6 @@ import prisma from '../db';
 import { publishEvent } from '../kafka/producer';
 import config from '../config';
 import logger from '../config/logger';
-import type { ProductRow } from '../types';
 
 const router = Router();
 const upload = multer({

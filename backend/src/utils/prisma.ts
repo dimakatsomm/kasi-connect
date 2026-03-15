@@ -17,5 +17,6 @@ export function decimalToNumber(
     return Number.isFinite(parsed) ? parsed : fallback;
   }
 
-  return value.toNumber();
+  const decimalValue = value.toNumber();
+  return Number.isFinite(decimalValue) ? decimalValue : fallback;
 }

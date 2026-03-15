@@ -104,6 +104,20 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderRow> 
 
   try {
     const order = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // Determine vendor type inside the transaction so queue_position is
+      // assigned atomically (avoids races on concurrent food orders).
+      const vendor = await tx.vendor.findUniqueOrThrow({ where: { id: vendorId } });
+      let queuePosition: number | null = null;
+      if (vendor.type === 'food') {
+        const activeCount = await tx.order.count({
+          where: {
+            vendor_id: vendorId,
+            status: { in: ['confirmed', 'preparing'] },
+          },
+        });
+        queuePosition = activeCount + 1;
+      }
+
       const createdOrder = await tx.order.create({
         data: {
           vendor_id: vendorId,
@@ -114,6 +128,7 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderRow> 
           delivery_fee: deliveryFee,
           subtotal,
           total,
+          queue_position: queuePosition,
         },
       });
 
@@ -129,11 +144,15 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderRow> 
           },
         });
 
-        await tx.$executeRaw`
+        const affectedRows = await tx.$executeRaw`
           UPDATE products
-          SET stock_level = GREATEST(0, stock_level - ${quantity})
+          SET stock_level = stock_level - ${quantity}
           WHERE id = ${product.id}
+            AND stock_level >= ${quantity}
         `;
+        if (affectedRows !== 1) {
+          throw new Error(`Insufficient stock for product ${product.id}`);
+        }
       }
 
       await tx.customer.update({
