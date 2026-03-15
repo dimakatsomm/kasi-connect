@@ -139,13 +139,11 @@ router.patch(
     const readField = (field: string): unknown =>
       bodyData[toCamel(field)] ?? bodyData[field];
 
-    const validationErrors: string[] = [];
-
     const maybeAssign = <K extends keyof Prisma.ProductUpdateInput>(
       field: K
-    ): void => {
+    ): string | undefined => {
       const value = readField(field as string);
-      if (value === undefined) return;
+      if (value === undefined) return undefined;
 
       if (field === 'aliases') {
         data.aliases = Array.isArray(value)
@@ -153,56 +151,51 @@ router.patch(
           : String(value)
               .split(',')
               .map((a) => a.trim());
-        return;
+        return undefined;
       }
 
       if (field === 'stock_level' || field === 'low_stock_threshold') {
-        const strVal = String(value).trim();
-        if (!/^\d+$/.test(strVal)) {
-          validationErrors.push(`Invalid value for ${String(field)}: must be an integer`);
-          return;
+        const str = String(value).trim();
+        if (!/^-?\d+$/.test(str)) {
+          return `Invalid value for ${field}: must be a whole number`;
         }
-        data[field] = parseInt(strVal, 10) as Prisma.ProductUpdateInput[K];
-        return;
+        data[field] = parseInt(str, 10) as Prisma.ProductUpdateInput[K];
+        return undefined;
       }
 
       if (field === 'is_available' || field === 'is_special') {
         const strVal = String(value).toLowerCase();
         if (!['true', 'false', '1', '0'].includes(strVal)) {
-          validationErrors.push(`Invalid value for ${String(field)}: must be true or false`);
-          return;
+          return `Invalid value for ${field}: must be true, false, 1, or 0`;
         }
         data[field] = (strVal === 'true' || strVal === '1') as Prisma.ProductUpdateInput[K];
-        return;
+        return undefined;
       }
 
       if (field === 'price' || field === 'special_price') {
-        const strVal = String(value).trim();
-        const n = parseFloat(strVal);
-        if (!Number.isFinite(n) || !/^\d+(\.\d+)?$/.test(strVal)) {
-          validationErrors.push(`Invalid value for ${String(field)}: must be a valid number`);
-          return;
+        const str = String(value).trim();
+        const n = Number(str);
+        if (str === '' || !Number.isFinite(n)) {
+          return `Invalid value for ${field}: must be a valid number`;
         }
         data[field] = n as Prisma.ProductUpdateInput[K];
-        return;
+        return undefined;
       }
 
       data[field] = value as Prisma.ProductUpdateInput[K];
+      return undefined;
     };
 
-    maybeAssign('name');
-    maybeAssign('description');
-    maybeAssign('price');
-    maybeAssign('stock_level');
-    maybeAssign('low_stock_threshold');
-    maybeAssign('is_available');
-    maybeAssign('is_special');
-    maybeAssign('special_price');
-    maybeAssign('aliases');
-
-    if (validationErrors.length > 0) {
-      res.status(400).json({ errors: validationErrors });
-      return;
+    const fieldNames: (keyof Prisma.ProductUpdateInput)[] = [
+      'name', 'description', 'price', 'stock_level', 'low_stock_threshold',
+      'is_available', 'is_special', 'special_price', 'aliases',
+    ];
+    for (const field of fieldNames) {
+      const validationError = maybeAssign(field);
+      if (validationError) {
+        res.status(400).json({ error: validationError });
+        return;
+      }
     }
 
     if (req.file) {

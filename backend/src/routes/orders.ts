@@ -85,9 +85,9 @@ router.get(
 
       const enrichedOrder = {
         ...(orderData as OrderRow),
-        subtotal: decimalToNumber((orderData as OrderRow).subtotal),
-        delivery_fee: decimalToNumber((orderData as OrderRow).delivery_fee),
-        total: decimalToNumber((orderData as OrderRow).total),
+        subtotal: decimalToNumber(orderData.subtotal),
+        delivery_fee: decimalToNumber(orderData.delivery_fee),
+        total: decimalToNumber(orderData.total),
         customer_phone: customer?.phone ?? '',
         customer_name: customer?.name ?? null,
         items: order_items.map(
