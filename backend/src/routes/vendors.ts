@@ -200,6 +200,10 @@ router.patch(
       });
       res.json({ vendor });
     } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+        res.status(404).json({ error: 'Vendor not found' });
+        return;
+      }
       logger.error('Failed to update vendor', {
         error: err instanceof Error ? err.message : String(err),
       });
