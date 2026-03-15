@@ -12,7 +12,7 @@ on:
 
 jobs:
   backend:
-    name: Backend - Build and Test
+    name: Backend - Lint, Build and Test
     runs-on: ubuntu-latest
 
     defaults:
@@ -32,6 +32,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Lint
+        run: npm run lint
 
       - name: Build
         run: npm run build
