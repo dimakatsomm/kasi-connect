@@ -43,8 +43,8 @@ function makeItem(
       is_special: specialPrice !== null,
       special_price: specialPrice ? new Decimal(specialPrice) : null,
       aliases: [],
-      created_at: new Date(),
-      updated_at: new Date(),
+      created_at: new Date('2024-01-01T00:00:00Z'),
+      updated_at: new Date('2024-01-01T00:00:00Z'),
     },
     quantity,
   };
@@ -104,8 +104,8 @@ describe('Product Service — matchProducts', () => {
       low_stock_threshold: 5,
       is_available: true,
       is_special: false,
-      created_at: '',
-      updated_at: '',
+      created_at: new Date('2024-01-01T00:00:00Z'),
+      updated_at: new Date('2024-01-01T00:00:00Z'),
     },
     {
       id: 'p2',
@@ -120,8 +120,8 @@ describe('Product Service — matchProducts', () => {
       low_stock_threshold: 5,
       is_available: true,
       is_special: false,
-      created_at: '',
-      updated_at: '',
+      created_at: new Date('2024-01-01T00:00:00Z'),
+      updated_at: new Date('2024-01-01T00:00:00Z'),
     },
     {
       id: 'p3',
@@ -136,8 +136,8 @@ describe('Product Service — matchProducts', () => {
       low_stock_threshold: 5,
       is_available: true,
       is_special: false,
-      created_at: '',
-      updated_at: '',
+      created_at: new Date('2024-01-01T00:00:00Z'),
+      updated_at: new Date('2024-01-01T00:00:00Z'),
     },
     {
       id: 'p4',
@@ -152,8 +152,8 @@ describe('Product Service — matchProducts', () => {
       low_stock_threshold: 5,
       is_available: true,
       is_special: false,
-      created_at: '',
-      updated_at: '',
+      created_at: new Date('2024-01-01T00:00:00Z'),
+      updated_at: new Date('2024-01-01T00:00:00Z'),
     },
   ];
 

@@ -13,7 +13,13 @@ import type {
   OrderStatus,
 } from '../types';
 
-type OrderWithItems = OrderRow & {
+type NormalizedOrderRow = Omit<OrderRow, 'subtotal' | 'delivery_fee' | 'total'> & {
+  subtotal: number;
+  delivery_fee: number;
+  total: number;
+};
+
+type OrderWithItems = NormalizedOrderRow & {
   customer_phone: string;
   customer_name: string | null;
   items: Array<{
@@ -55,7 +61,7 @@ export function getCustomerByPhone(phone: string): Promise<CustomerRow | null> {
  */
 export async function getLastOrder(
   customerId: string
-): Promise<(OrderRow & { items: LastOrderItem[] }) | null> {
+): Promise<(NormalizedOrderRow & { items: LastOrderItem[] }) | null> {
   const order = await prisma.order.findFirst({
     where: {
       customer_id: customerId,
@@ -84,7 +90,13 @@ export async function getLastOrder(
     productName: item.product?.name ?? '',
   }));
 
-  return { ...(orderData as OrderRow), items };
+  return {
+    ...orderData,
+    subtotal: decimalToNumber(orderData.subtotal),
+    delivery_fee: decimalToNumber(orderData.delivery_fee),
+    total: decimalToNumber(orderData.total),
+    items,
+  };
 }
 
 /**
@@ -245,7 +257,10 @@ export async function getVendorOrders(
     }));
 
     return {
-      ...(orderData as OrderRow),
+      ...orderData,
+      subtotal: decimalToNumber(orderData.subtotal),
+      delivery_fee: decimalToNumber(orderData.delivery_fee),
+      total: decimalToNumber(orderData.total),
       customer_phone: customer?.phone ?? '',
       customer_name: customer?.name ?? null,
       items,
@@ -313,9 +328,14 @@ export async function updateOrderStatus(
 /**
  * Get next queue position for a food vendor (count of 'confirmed' + 'preparing' orders).
  * @param vendorId
+ * @param tx  Optional Prisma transaction client; uses the global client when omitted.
  */
-export async function getNextQueuePosition(vendorId: string): Promise<number> {
-  const count = await prisma.order.count({
+export async function getNextQueuePosition(
+  vendorId: string,
+  tx?: Prisma.TransactionClient
+): Promise<number> {
+  const client = tx ?? prisma;
+  const count = await client.order.count({
     where: {
       vendor_id: vendorId,
       status: { in: ['confirmed', 'preparing'] },
