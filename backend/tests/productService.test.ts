@@ -1,4 +1,5 @@
-import { Decimal } from '@prisma/client/runtime/library';
+import { Prisma } from '@prisma/client';
+const { Decimal } = Prisma;
 import { buildOrderSummary, matchProducts } from '../src/services/productService';
 import type { MatchedItem } from '../src/types';
 

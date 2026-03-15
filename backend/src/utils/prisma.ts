@@ -13,7 +13,8 @@ export function decimalToNumber(
   }
 
   if (typeof value === 'string') {
-    return parseFloat(value);
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
   }
 
   return value.toNumber();

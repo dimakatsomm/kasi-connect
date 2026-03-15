@@ -29,6 +29,11 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     const orders = await orderService.getVendorOrders(vendorId, statuses);
     res.json({ orders });
   } catch (err) {
+    const statusCode = (err as { statusCode?: number }).statusCode;
+    if (statusCode === 400) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Bad request' });
+      return;
+    }
     logger.error('Failed to list orders', {
       error: err instanceof Error ? err.message : String(err),
     });
