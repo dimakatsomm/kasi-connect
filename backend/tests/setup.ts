@@ -1,5 +1,3 @@
-'use strict';
-
 // Set test environment variables before any modules are loaded
 process.env.NODE_ENV = 'test';
 process.env.WHATSAPP_VERIFY_TOKEN = 'test_verify_token';

@@ -1,7 +1,5 @@
-'use strict';
-
-const request = require('supertest');
-const app = require('../src/app');
+import request from 'supertest';
+import app from '../src/app';
 
 // Mock the message handler so we don't need live Redis/DB in webhook tests
 jest.mock('../src/services/messageHandler', () => ({

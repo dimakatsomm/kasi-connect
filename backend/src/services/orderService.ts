@@ -1,17 +1,24 @@
-'use strict';
-
-const db = require('../db');
-const logger = require('../config/logger');
-const { publishEvent } = require('../kafka/producer');
-const config = require('../config');
+import * as db from '../db';
+import logger from '../config/logger';
+import { publishEvent } from '../kafka/producer';
+import config from '../config';
+import type {
+  CustomerRow,
+  OrderRow,
+  CreateOrderParams,
+  UpdateOrderStatusExtra,
+} from '../types';
 
 /**
  * Create or upsert a customer record.
- * @param {string} phone
- * @param {string} [name]
+ * @param phone
+ * @param name
  */
-async function upsertCustomer(phone, name = null) {
-  const result = await db.query(
+export async function upsertCustomer(
+  phone: string,
+  name: string | null = null
+): Promise<CustomerRow> {
+  const result = await db.query<CustomerRow>(
     `INSERT INTO customers (phone, name)
      VALUES ($1, $2)
      ON CONFLICT (phone) DO UPDATE SET name = COALESCE($2, customers.name), updated_at = NOW()
@@ -23,20 +30,27 @@ async function upsertCustomer(phone, name = null) {
 
 /**
  * Get a customer by phone.
- * @param {string} phone
+ * @param phone
  */
-async function getCustomerByPhone(phone) {
-  const result = await db.query('SELECT * FROM customers WHERE phone = $1', [phone]);
-  return result.rows[0] || null;
+export async function getCustomerByPhone(
+  phone: string
+): Promise<CustomerRow | null> {
+  const result = await db.query<CustomerRow>(
+    'SELECT * FROM customers WHERE phone = $1',
+    [phone]
+  );
+  return result.rows[0] ?? null;
 }
 
 /**
  * Get the most recent completed order for a customer (for repeat order shortcut).
- * @param {string} customerId
+ * @param customerId
  */
-async function getLastOrder(customerId) {
-  const result = await db.query(
-    `SELECT o.*, 
+export async function getLastOrder(
+  customerId: string
+): Promise<(OrderRow & { items: unknown[] }) | null> {
+  const result = await db.query<OrderRow & { items: unknown[] }>(
+    `SELECT o.*,
             json_agg(
               json_build_object(
                 'productId', oi.product_id,
@@ -55,38 +69,30 @@ async function getLastOrder(customerId) {
      LIMIT 1`,
     [customerId]
   );
-  return result.rows[0] || null;
+  return result.rows[0] ?? null;
 }
 
 /**
  * Create a new order from the confirmed session items.
- *
- * @param {object} params
- * @param {string} params.vendorId
- * @param {string} params.customerId
- * @param {Array<{ product, quantity }>} params.items
- * @param {string} params.fulfilmentType  'collection' | 'delivery'
- * @param {string} [params.deliveryAddress]
- * @param {number} [params.deliveryFee]
- * @param {number} [params.subtotal]
- * @param {number} [params.total]
  */
-async function createOrder({
-  vendorId,
-  customerId,
-  items,
-  fulfilmentType = 'collection',
-  deliveryAddress = null,
-  deliveryFee = 0,
-  subtotal = 0,
-  total = 0,
-}) {
+export async function createOrder(params: CreateOrderParams): Promise<OrderRow> {
+  const {
+    vendorId,
+    customerId,
+    items,
+    fulfilmentType = 'collection',
+    deliveryAddress = null,
+    deliveryFee = 0,
+    subtotal = 0,
+    total = 0,
+  } = params;
+
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
 
     // Insert order
-    const orderResult = await client.query(
+    const orderResult = await client.query<OrderRow>(
       `INSERT INTO orders (vendor_id, customer_id, status, fulfilment_type, delivery_address, delivery_fee, subtotal, total)
        VALUES ($1, $2, 'confirmed', $3, $4, $5, $6, $7)
        RETURNING *`,
@@ -96,7 +102,9 @@ async function createOrder({
 
     // Insert order items
     for (const { product, quantity } of items) {
-      const unitPrice = parseFloat(product.special_price || product.price);
+      const unitPrice = parseFloat(
+        String(product.special_price ?? product.price)
+      );
       await client.query(
         `INSERT INTO order_items (order_id, product_id, quantity, unit_price, total_price)
          VALUES ($1, $2, $3, $4, $5)`,
@@ -120,18 +128,22 @@ async function createOrder({
 
     logger.info('Order created', { orderId: order.id, vendorId, customerId });
 
-    // Publish event
+    // Publish event (non-fatal)
     await publishEvent(config.kafka.topics.orderCreated, {
       orderId: order.id,
       vendorId,
       customerId,
       status: 'confirmed',
-    }).catch((err) => logger.warn('Failed to publish order.created event', { error: err.message }));
+    }).catch((err: Error) =>
+      logger.warn('Failed to publish order.created event', { error: err.message })
+    );
 
     return order;
   } catch (err) {
     await client.query('ROLLBACK');
-    logger.error('Failed to create order', { error: err.message });
+    logger.error('Failed to create order', {
+      error: err instanceof Error ? err.message : String(err),
+    });
     throw err;
   } finally {
     client.release();
@@ -141,11 +153,14 @@ async function createOrder({
 /**
  * Get orders for a vendor (for the dashboard kanban board).
  *
- * @param {string} vendorId
- * @param {string[]} [statuses]  Filter by status array
+ * @param vendorId
+ * @param statuses  Filter by status array
  */
-async function getVendorOrders(vendorId, statuses = ['confirmed', 'preparing', 'ready']) {
-  const result = await db.query(
+export async function getVendorOrders(
+  vendorId: string,
+  statuses: string[] = ['confirmed', 'preparing', 'ready']
+): Promise<OrderRow[]> {
+  const result = await db.query<OrderRow>(
     `SELECT o.*,
             c.phone AS customer_phone,
             c.name  AS customer_name,
@@ -174,13 +189,17 @@ async function getVendorOrders(vendorId, statuses = ['confirmed', 'preparing', '
 /**
  * Update order status.
  *
- * @param {string} orderId
- * @param {string} newStatus  One of: confirmed, preparing, ready, delivered, cancelled
- * @param {object} [extra]    Additional fields to update
+ * @param orderId
+ * @param newStatus  One of: confirmed, preparing, ready, delivered, cancelled
+ * @param extra      Additional fields to update
  */
-async function updateOrderStatus(orderId, newStatus, extra = {}) {
-  const fields = ['status = $2'];
-  const values = [orderId, newStatus];
+export async function updateOrderStatus(
+  orderId: string,
+  newStatus: string,
+  extra: UpdateOrderStatusExtra = {}
+): Promise<OrderRow> {
+  const fields: string[] = ['status = $2'];
+  const values: unknown[] = [orderId, newStatus];
 
   if (extra.queuePosition !== undefined) {
     values.push(extra.queuePosition);
@@ -191,7 +210,7 @@ async function updateOrderStatus(orderId, newStatus, extra = {}) {
     fields.push(`estimated_ready_time = $${values.length}`);
   }
 
-  const result = await db.query(
+  const result = await db.query<OrderRow>(
     `UPDATE orders SET ${fields.join(', ')}, updated_at = NOW()
      WHERE id = $1
      RETURNING *`,
@@ -204,20 +223,24 @@ async function updateOrderStatus(orderId, newStatus, extra = {}) {
 
   const order = result.rows[0];
 
-  // Publish event
+  // Publish event (non-fatal)
   await publishEvent(config.kafka.topics.orderUpdated, {
     orderId,
     status: newStatus,
     customerId: order.customer_id,
     vendorId: order.vendor_id,
-  }).catch((err) => logger.warn('Failed to publish order.updated event', { error: err.message }));
+  }).catch((err: Error) =>
+    logger.warn('Failed to publish order.updated event', { error: err.message })
+  );
 
   if (newStatus === 'ready') {
     await publishEvent(config.kafka.topics.orderReady, {
       orderId,
       customerId: order.customer_id,
       vendorId: order.vendor_id,
-    }).catch((err) => logger.warn('Failed to publish order.ready event', { error: err.message }));
+    }).catch((err: Error) =>
+      logger.warn('Failed to publish order.ready event', { error: err.message })
+    );
   }
 
   return order;
@@ -225,11 +248,10 @@ async function updateOrderStatus(orderId, newStatus, extra = {}) {
 
 /**
  * Get next queue position for a food vendor (count of 'confirmed' + 'preparing' orders).
- * @param {string} vendorId
- * @returns {Promise<number>}
+ * @param vendorId
  */
-async function getNextQueuePosition(vendorId) {
-  const result = await db.query(
+export async function getNextQueuePosition(vendorId: string): Promise<number> {
+  const result = await db.query<{ count: string }>(
     `SELECT COUNT(*) AS count FROM orders WHERE vendor_id = $1 AND status IN ('confirmed', 'preparing')`,
     [vendorId]
   );
@@ -239,23 +261,11 @@ async function getNextQueuePosition(vendorId) {
 /**
  * Estimate ready time for a food vendor order.
  * Base: 15 minutes + 5 minutes per order ahead in queue.
- * @param {number} queuePosition
- * @returns {Date}
+ * @param queuePosition
  */
-function estimateReadyTime(queuePosition) {
+export function estimateReadyTime(queuePosition: number): Date {
   const BASE_MINUTES = 15;
   const PER_ORDER_MINUTES = 5;
   const totalMinutes = BASE_MINUTES + (queuePosition - 1) * PER_ORDER_MINUTES;
   return new Date(Date.now() + totalMinutes * 60 * 1000);
 }
-
-module.exports = {
-  upsertCustomer,
-  getCustomerByPhone,
-  getLastOrder,
-  createOrder,
-  getVendorOrders,
-  updateOrderStatus,
-  getNextQueuePosition,
-  estimateReadyTime,
-};

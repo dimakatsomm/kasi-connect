@@ -1,6 +1,4 @@
-'use strict';
-
-const { parseOrderText, detectLanguage, normalise } = require('../src/services/nlpService');
+import { parseOrderText, detectLanguage, normalise } from '../src/services/nlpService';
 
 describe('NLP Service — parseOrderText', () => {
   describe('English orders', () => {
@@ -17,7 +15,7 @@ describe('NLP Service — parseOrderText', () => {
     });
 
     test('parses "I want" opener', () => {
-      const result = parseOrderText("I want 3 pies");
+      const result = parseOrderText('I want 3 pies');
       expect(result).toHaveLength(1);
       expect(result[0]).toMatchObject({ quantity: 3, name: 'pies' });
     });
@@ -109,6 +107,7 @@ describe('NLP Service — parseOrderText', () => {
     });
 
     test('returns empty array for null', () => {
+      // Function accepts null/undefined gracefully
       expect(parseOrderText(null)).toHaveLength(0);
     });
 

@@ -1,14 +1,21 @@
-'use strict';
-
-const Fuse = require('fuse.js');
-const db = require('../db');
-const logger = require('../config/logger');
+import Fuse, { IFuseOptions } from 'fuse.js';
+import * as db from '../db';
+import logger from '../config/logger';
+import type {
+  ProductRow,
+  ParsedItem,
+  MatchedItem,
+  AmbiguousItem,
+  UnmatchedItem,
+  MatchProductsResult,
+  OrderSummary,
+} from '../types';
 
 /**
  * Fuse.js options for fuzzy product name matching.
  * Lower threshold = stricter match.
  */
-const FUSE_OPTIONS = {
+const FUSE_OPTIONS: IFuseOptions<ProductRow> = {
   keys: [
     { name: 'name', weight: 0.7 },
     { name: 'aliases', weight: 0.3 },
@@ -20,12 +27,13 @@ const FUSE_OPTIONS = {
 
 /**
  * Load all available products for a vendor from the database.
- * @param {string} vendorId
- * @returns {Promise<Array>}
+ * @param vendorId
  */
-async function getVendorProducts(vendorId) {
-  const result = await db.query(
-    `SELECT id, name, price, description, image_url, stock_level, 
+export async function getVendorProducts(
+  vendorId: string
+): Promise<ProductRow[]> {
+  const result = await db.query<ProductRow>(
+    `SELECT id, name, price, description, image_url, stock_level,
             is_available, is_special, special_price, aliases
      FROM products
      WHERE vendor_id = $1 AND is_available = TRUE
@@ -38,16 +46,13 @@ async function getVendorProducts(vendorId) {
 /**
  * Match a list of parsed order items against the vendor's product catalogue.
  *
- * @param {string} vendorId
- * @param {Array<{ quantity: number, name: string, raw: string }>} parsedItems
- *
- * @returns {Promise<{
- *   matched:  Array<{ item, product, quantity }>,
- *   ambiguous: Array<{ item, candidates }>,
- *   unmatched: Array<{ item }>
- * }>}
+ * @param vendorId
+ * @param parsedItems
  */
-async function matchProducts(vendorId, parsedItems) {
+export async function matchProducts(
+  vendorId: string,
+  parsedItems: ParsedItem[]
+): Promise<MatchProductsResult> {
   const products = await getVendorProducts(vendorId);
 
   if (products.length === 0) {
@@ -62,9 +67,9 @@ async function matchProducts(vendorId, parsedItems) {
   // Build Fuse index
   const fuse = new Fuse(products, FUSE_OPTIONS);
 
-  const matched = [];
-  const ambiguous = [];
-  const unmatched = [];
+  const matched: MatchedItem[] = [];
+  const ambiguous: AmbiguousItem[] = [];
+  const unmatched: UnmatchedItem[] = [];
 
   for (const item of parsedItems) {
     const searchResults = fuse.search(item.name);
@@ -79,9 +84,9 @@ async function matchProducts(vendorId, parsedItems) {
     const second = searchResults[1];
 
     const isAmbiguous =
-      second &&
-      Math.abs((top.score || 0) - (second.score || 0)) < 0.1 &&
-      top.score > 0.1; // non-trivial ambiguity
+      second !== undefined &&
+      Math.abs((top.score ?? 0) - (second.score ?? 0)) < 0.1 &&
+      (top.score ?? 0) > 0.1; // non-trivial ambiguity
 
     if (isAmbiguous) {
       ambiguous.push({
@@ -102,24 +107,27 @@ async function matchProducts(vendorId, parsedItems) {
 
 /**
  * Build an itemised order summary string for WhatsApp confirmation.
- * @param {Array<{ product, quantity }>} matchedItems
- * @param {number} deliveryFee
- * @returns {{ lines: string[], subtotal: number, total: number }}
+ * @param matchedItems
+ * @param deliveryFee
  */
-function buildOrderSummary(matchedItems, deliveryFee = 0) {
+export function buildOrderSummary(
+  matchedItems: MatchedItem[],
+  deliveryFee = 0
+): OrderSummary {
   let subtotal = 0;
-  const lines = [];
+  const lines: string[] = [];
 
   for (const { product, quantity } of matchedItems) {
-    const unitPrice = parseFloat(product.special_price || product.price);
+    const unitPrice = parseFloat(
+      String(product.special_price ?? product.price)
+    );
     const lineTotal = unitPrice * quantity;
     subtotal += lineTotal;
-    lines.push(`• ${quantity}x ${product.name} @ R${unitPrice.toFixed(2)} = R${lineTotal.toFixed(2)}`);
+    lines.push(
+      `• ${quantity}x ${product.name} @ R${unitPrice.toFixed(2)} = R${lineTotal.toFixed(2)}`
+    );
   }
 
   const total = subtotal + deliveryFee;
-
   return { lines, subtotal, total };
 }
-
-module.exports = { matchProducts, getVendorProducts, buildOrderSummary };

@@ -1,14 +1,13 @@
-'use strict';
+import { Kafka, Producer, logLevel } from 'kafkajs';
+import config from '../config';
+import logger from '../config/logger';
+import type { KafkaEventPayload } from '../types';
 
-const { Kafka, logLevel } = require('kafkajs');
-const config = require('../config');
-const logger = require('../config/logger');
-
-let kafkaClient;
-let producer;
+let kafkaClient: Kafka | undefined;
+let producer: Producer | undefined;
 let isConnected = false;
 
-function getKafkaClient() {
+function getKafkaClient(): Kafka {
   if (!kafkaClient) {
     kafkaClient = new Kafka({
       clientId: config.kafka.clientId,
@@ -19,7 +18,7 @@ function getKafkaClient() {
   return kafkaClient;
 }
 
-async function getProducer() {
+async function getProducer(): Promise<Producer> {
   if (!producer) {
     producer = getKafkaClient().producer();
     await producer.connect();
@@ -32,25 +31,32 @@ async function getProducer() {
 /**
  * Publish a JSON event to a Kafka topic.
  *
- * @param {string} topic
- * @param {object} payload
- * @param {string} [key]   Optional message key (used for partitioning)
+ * @param topic
+ * @param payload
+ * @param key   Optional message key (used for partitioning)
  */
-async function publishEvent(topic, payload, key = null) {
+export async function publishEvent(
+  topic: string,
+  payload: KafkaEventPayload,
+  key: string | null = null
+): Promise<void> {
   try {
     const prod = await getProducer();
     await prod.send({
       topic,
       messages: [
         {
-          key: key || payload.orderId || null,
+          key: key ?? payload.orderId ?? null,
           value: JSON.stringify(payload),
         },
       ],
     });
     logger.debug('Kafka event published', { topic, payload });
   } catch (err) {
-    logger.error('Failed to publish Kafka event', { topic, error: err.message });
+    logger.error('Failed to publish Kafka event', {
+      topic,
+      error: err instanceof Error ? err.message : String(err),
+    });
     // Don't throw — Kafka failures should be non-fatal for the order flow
   }
 }
@@ -58,7 +64,7 @@ async function publishEvent(topic, payload, key = null) {
 /**
  * Gracefully disconnect the producer.
  */
-async function disconnectProducer() {
+export async function disconnectProducer(): Promise<void> {
   if (producer && isConnected) {
     await producer.disconnect();
     isConnected = false;
@@ -66,4 +72,4 @@ async function disconnectProducer() {
   }
 }
 
-module.exports = { publishEvent, disconnectProducer, getKafkaClient };
+export { getKafkaClient };

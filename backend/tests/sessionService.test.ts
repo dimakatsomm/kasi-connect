@@ -1,19 +1,17 @@
-'use strict';
-
-const { SESSION_STATES, VALID_TRANSITIONS } = require('../src/services/sessionStates');
+import { SESSION_STATES, VALID_TRANSITIONS } from '../src/services/sessionStates';
 
 // Mock ioredis
 jest.mock('ioredis', () => {
-  const store = new Map();
+  const store = new Map<string, string>();
 
   return jest.fn().mockImplementation(() => ({
     on: jest.fn(),
-    get: jest.fn((key) => Promise.resolve(store.get(key) || null)),
-    set: jest.fn((key, value) => {
+    get: jest.fn((key: string) => Promise.resolve(store.get(key) ?? null)),
+    set: jest.fn((key: string, value: string) => {
       store.set(key, value);
       return Promise.resolve('OK');
     }),
-    del: jest.fn((key) => {
+    del: jest.fn((key: string) => {
       store.delete(key);
       return Promise.resolve(1);
     }),
@@ -22,14 +20,15 @@ jest.mock('ioredis', () => {
   }));
 });
 
-const sessionService = require('../src/services/sessionService');
+import * as sessionService from '../src/services/sessionService';
 
 describe('Session Service', () => {
   beforeEach(() => {
     // Clear the mock Redis store between tests
-    const Redis = require('ioredis');
-    const client = sessionService.getRedisClient();
-    if (client._clear) client._clear();
+    const client = sessionService.getRedisClient() as unknown as {
+      _clear?: () => void;
+    };
+    client._clear?.();
   });
 
   describe('createSession', () => {
@@ -41,7 +40,10 @@ describe('Session Service', () => {
     });
 
     test('creates session with vendorId', async () => {
-      const session = await sessionService.createSession('+27821000002', 'vendor-123');
+      const session = await sessionService.createSession(
+        '+27821000002',
+        'vendor-123'
+      );
       expect(session.vendorId).toBe('vendor-123');
     });
   });
@@ -68,7 +70,9 @@ describe('Session Service', () => {
   describe('updateSession', () => {
     test('merges updates into existing session', async () => {
       await sessionService.createSession('+27821000005');
-      const updated = await sessionService.updateSession('+27821000005', { vendorId: 'v1' });
+      const updated = await sessionService.updateSession('+27821000005', {
+        vendorId: 'v1',
+      });
       expect(updated.vendorId).toBe('v1');
       expect(updated.state).toBe(SESSION_STATES.AWAITING_VENDOR_TYPE);
     });
@@ -93,7 +97,10 @@ describe('Session Service', () => {
     test('throws on invalid transition', async () => {
       await sessionService.createSession('+27821000007');
       await expect(
-        sessionService.transitionSession('+27821000007', SESSION_STATES.ORDER_PLACED)
+        sessionService.transitionSession(
+          '+27821000007',
+          SESSION_STATES.ORDER_PLACED
+        )
       ).rejects.toThrow('Invalid state transition');
     });
 
@@ -111,8 +118,34 @@ describe('Session Service', () => {
   describe('resetSession', () => {
     test('resets state and items', async () => {
       await sessionService.createSession('+27821000009');
-      await sessionService.transitionSession('+27821000009', SESSION_STATES.AWAITING_ITEMS);
-      await sessionService.updateSession('+27821000009', { items: [{ name: 'bread' }] });
+      await sessionService.transitionSession(
+        '+27821000009',
+        SESSION_STATES.AWAITING_ITEMS
+      );
+      await sessionService.updateSession('+27821000009', {
+        items: [
+          {
+            item: { quantity: 1, name: 'bread', raw: 'bread' },
+            product: {
+              id: 'p1',
+              vendor_id: 'v1',
+              name: 'Bread',
+              description: null,
+              price: '15.00',
+              image_url: null,
+              stock_level: 10,
+              low_stock_threshold: 5,
+              is_available: true,
+              is_special: false,
+              special_price: null,
+              aliases: [],
+              created_at: '',
+              updated_at: '',
+            },
+            quantity: 1,
+          },
+        ],
+      });
 
       const reset = await sessionService.resetSession('+27821000009');
       expect(reset.state).toBe(SESSION_STATES.AWAITING_VENDOR_TYPE);

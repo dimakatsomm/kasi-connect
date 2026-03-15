@@ -1,19 +1,47 @@
-'use strict';
-
-const { buildOrderSummary } = require('../src/services/productService');
+import { buildOrderSummary } from '../src/services/productService';
+import type { MatchedItem } from '../src/types';
 
 // We mock the db module so matchProducts can be tested without a live database
 jest.mock('../src/db', () => ({
   query: jest.fn(),
 }));
 
-const db = require('../src/db');
-const { matchProducts } = require('../src/services/productService');
+import * as db from '../src/db';
+import { matchProducts } from '../src/services/productService';
+
+// Helper to create a minimal MatchedItem for buildOrderSummary tests
+function makeItem(
+  name: string,
+  price: string,
+  specialPrice: string | null,
+  quantity: number
+): MatchedItem {
+  return {
+    item: { quantity, name, raw: name },
+    product: {
+      id: 'p0',
+      vendor_id: 'v0',
+      name,
+      description: null,
+      price,
+      image_url: null,
+      stock_level: 10,
+      low_stock_threshold: 5,
+      is_available: true,
+      is_special: specialPrice !== null,
+      special_price: specialPrice,
+      aliases: [],
+      created_at: '',
+      updated_at: '',
+    },
+    quantity,
+  };
+}
 
 describe('Product Service — buildOrderSummary', () => {
-  const items = [
-    { product: { name: 'Bread', price: '15.00', special_price: null }, quantity: 2 },
-    { product: { name: 'Milk 1L', price: '22.00', special_price: null }, quantity: 1 },
+  const items: MatchedItem[] = [
+    makeItem('Bread', '15.00', null, 2),
+    makeItem('Milk 1L', '22.00', null, 1),
   ];
 
   test('calculates subtotal and total correctly', () => {
@@ -29,9 +57,7 @@ describe('Product Service — buildOrderSummary', () => {
   });
 
   test('uses special_price when available', () => {
-    const specialItems = [
-      { product: { name: 'Bread', price: '15.00', special_price: '10.00' }, quantity: 1 },
-    ];
+    const specialItems: MatchedItem[] = [makeItem('Bread', '15.00', '10.00', 1)];
     const { subtotal } = buildOrderSummary(specialItems);
     expect(subtotal).toBeCloseTo(10.0);
   });
@@ -53,19 +79,82 @@ describe('Product Service — buildOrderSummary', () => {
 
 describe('Product Service — matchProducts', () => {
   const mockProducts = [
-    { id: 'p1', name: 'Bread', price: '15.00', special_price: null, aliases: ['loaf', 'mkate'] },
-    { id: 'p2', name: 'Full Cream Milk 1L', price: '22.00', special_price: null, aliases: ['milk'] },
-    { id: 'p3', name: 'Coca-Cola 500ml', price: '18.00', special_price: null, aliases: ['coke', 'cola'] },
-    { id: 'p4', name: 'Pap 500g', price: '12.00', special_price: null, aliases: ['pap', 'phutu'] },
+    {
+      id: 'p1',
+      name: 'Bread',
+      price: '15.00',
+      special_price: null,
+      aliases: ['loaf', 'mkate'],
+      vendor_id: 'v1',
+      description: null,
+      image_url: null,
+      stock_level: 10,
+      low_stock_threshold: 5,
+      is_available: true,
+      is_special: false,
+      created_at: '',
+      updated_at: '',
+    },
+    {
+      id: 'p2',
+      name: 'Full Cream Milk 1L',
+      price: '22.00',
+      special_price: null,
+      aliases: ['milk'],
+      vendor_id: 'v1',
+      description: null,
+      image_url: null,
+      stock_level: 10,
+      low_stock_threshold: 5,
+      is_available: true,
+      is_special: false,
+      created_at: '',
+      updated_at: '',
+    },
+    {
+      id: 'p3',
+      name: 'Coca-Cola 500ml',
+      price: '18.00',
+      special_price: null,
+      aliases: ['coke', 'cola'],
+      vendor_id: 'v1',
+      description: null,
+      image_url: null,
+      stock_level: 10,
+      low_stock_threshold: 5,
+      is_available: true,
+      is_special: false,
+      created_at: '',
+      updated_at: '',
+    },
+    {
+      id: 'p4',
+      name: 'Pap 500g',
+      price: '12.00',
+      special_price: null,
+      aliases: ['pap', 'phutu'],
+      vendor_id: 'v1',
+      description: null,
+      image_url: null,
+      stock_level: 10,
+      low_stock_threshold: 5,
+      is_available: true,
+      is_special: false,
+      created_at: '',
+      updated_at: '',
+    },
   ];
 
   beforeEach(() => {
-    db.query.mockResolvedValue({ rows: mockProducts });
+    (db.query as jest.Mock).mockResolvedValue({ rows: mockProducts });
   });
 
   test('matches exact product names', async () => {
     const parsedItems = [{ quantity: 1, name: 'bread', raw: 'bread' }];
-    const { matched, ambiguous, unmatched } = await matchProducts('vendor1', parsedItems);
+    const { matched, ambiguous, unmatched } = await matchProducts(
+      'vendor1',
+      parsedItems
+    );
     expect(matched).toHaveLength(1);
     expect(matched[0].product.name).toBe('Bread');
     expect(ambiguous).toHaveLength(0);
@@ -88,7 +177,7 @@ describe('Product Service — matchProducts', () => {
   });
 
   test('returns empty arrays for empty vendor catalogue', async () => {
-    db.query.mockResolvedValueOnce({ rows: [] });
+    (db.query as jest.Mock).mockResolvedValueOnce({ rows: [] });
     const parsedItems = [{ quantity: 1, name: 'bread', raw: 'bread' }];
     const { matched, unmatched } = await matchProducts('vendor1', parsedItems);
     expect(matched).toHaveLength(0);

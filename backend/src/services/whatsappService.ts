@@ -1,16 +1,32 @@
-'use strict';
+import axios from 'axios';
+import config from '../config';
+import logger from '../config/logger';
 
-const axios = require('axios');
-const config = require('../config');
-const logger = require('../config/logger');
+interface WhatsAppButton {
+  id: string;
+  title: string;
+}
+
+interface WhatsAppListRow {
+  id: string;
+  title: string;
+  description?: string;
+}
+
+interface WhatsAppMessageResponse {
+  messages?: Array<{ id: string }>;
+}
 
 /**
  * Send a plain text WhatsApp message via Meta Cloud API.
  *
- * @param {string} to    Recipient phone in E.164 format (e.g. "27821234567")
- * @param {string} body  Message text
+ * @param to    Recipient phone in E.164 format (e.g. "27821234567")
+ * @param body  Message text
  */
-async function sendTextMessage(to, body) {
+export async function sendTextMessage(
+  to: string,
+  body: string
+): Promise<WhatsAppMessageResponse> {
   const url = `${config.whatsapp.apiBaseUrl}/${config.whatsapp.phoneNumberId}/messages`;
 
   const payload = {
@@ -22,16 +38,20 @@ async function sendTextMessage(to, body) {
   };
 
   try {
-    const response = await axios.post(url, payload, {
+    const response = await axios.post<WhatsAppMessageResponse>(url, payload, {
       headers: {
         Authorization: `Bearer ${config.whatsapp.accessToken}`,
         'Content-Type': 'application/json',
       },
     });
-    logger.debug('WhatsApp message sent', { to, messageId: response.data?.messages?.[0]?.id });
+    logger.debug('WhatsApp message sent', {
+      to,
+      messageId: response.data?.messages?.[0]?.id,
+    });
     return response.data;
   } catch (err) {
-    const errData = err.response?.data || err.message;
+    const errData =
+      axios.isAxiosError(err) ? (err.response?.data as unknown) : (err instanceof Error ? err.message : String(err));
     logger.error('Failed to send WhatsApp message', { to, error: errData });
     throw err;
   }
@@ -40,11 +60,15 @@ async function sendTextMessage(to, body) {
 /**
  * Send an interactive button message (up to 3 buttons).
  *
- * @param {string} to
- * @param {string} bodyText
- * @param {Array<{ id: string, title: string }>} buttons
+ * @param to
+ * @param bodyText
+ * @param buttons
  */
-async function sendButtonMessage(to, bodyText, buttons) {
+export async function sendButtonMessage(
+  to: string,
+  bodyText: string,
+  buttons: WhatsAppButton[]
+): Promise<WhatsAppMessageResponse> {
   const url = `${config.whatsapp.apiBaseUrl}/${config.whatsapp.phoneNumberId}/messages`;
 
   const payload = {
@@ -65,7 +89,7 @@ async function sendButtonMessage(to, bodyText, buttons) {
   };
 
   try {
-    const response = await axios.post(url, payload, {
+    const response = await axios.post<WhatsAppMessageResponse>(url, payload, {
       headers: {
         Authorization: `Bearer ${config.whatsapp.accessToken}`,
         'Content-Type': 'application/json',
@@ -74,7 +98,9 @@ async function sendButtonMessage(to, bodyText, buttons) {
     logger.debug('WhatsApp button message sent', { to });
     return response.data;
   } catch (err) {
-    logger.error('Failed to send WhatsApp button message', { to, error: err.response?.data || err.message });
+    const errData =
+      axios.isAxiosError(err) ? (err.response?.data as unknown) : (err instanceof Error ? err.message : String(err));
+    logger.error('Failed to send WhatsApp button message', { to, error: errData });
     throw err;
   }
 }
@@ -82,12 +108,17 @@ async function sendButtonMessage(to, bodyText, buttons) {
 /**
  * Send a list message (for menu / product selection).
  *
- * @param {string} to
- * @param {string} bodyText
- * @param {string} buttonLabel  Label on the list button
- * @param {Array<{ id: string, title: string, description?: string }>} rows
+ * @param to
+ * @param bodyText
+ * @param buttonLabel  Label on the list button
+ * @param rows
  */
-async function sendListMessage(to, bodyText, buttonLabel, rows) {
+export async function sendListMessage(
+  to: string,
+  bodyText: string,
+  buttonLabel: string,
+  rows: WhatsAppListRow[]
+): Promise<WhatsAppMessageResponse> {
   const url = `${config.whatsapp.apiBaseUrl}/${config.whatsapp.phoneNumberId}/messages`;
 
   const payload = {
@@ -106,7 +137,7 @@ async function sendListMessage(to, bodyText, buttonLabel, rows) {
             rows: rows.map((r) => ({
               id: r.id,
               title: r.title,
-              description: r.description || '',
+              description: r.description ?? '',
             })),
           },
         ],
@@ -115,7 +146,7 @@ async function sendListMessage(to, bodyText, buttonLabel, rows) {
   };
 
   try {
-    const response = await axios.post(url, payload, {
+    const response = await axios.post<WhatsAppMessageResponse>(url, payload, {
       headers: {
         Authorization: `Bearer ${config.whatsapp.accessToken}`,
         'Content-Type': 'application/json',
@@ -124,7 +155,9 @@ async function sendListMessage(to, bodyText, buttonLabel, rows) {
     logger.debug('WhatsApp list message sent', { to });
     return response.data;
   } catch (err) {
-    logger.error('Failed to send WhatsApp list message', { to, error: err.response?.data || err.message });
+    const errData =
+      axios.isAxiosError(err) ? (err.response?.data as unknown) : (err instanceof Error ? err.message : String(err));
+    logger.error('Failed to send WhatsApp list message', { to, error: errData });
     throw err;
   }
 }
@@ -133,25 +166,24 @@ async function sendListMessage(to, bodyText, buttonLabel, rows) {
  * Download a media file (voice note) by its WhatsApp media ID.
  * Returns the media as a Buffer.
  *
- * @param {string} mediaId
- * @returns {Promise<{ buffer: Buffer, mimeType: string }>}
+ * @param mediaId
  */
-async function downloadMedia(mediaId) {
+export async function downloadMedia(
+  mediaId: string
+): Promise<{ buffer: Buffer; mimeType: string }> {
   // First, get the media URL
   const metaUrl = `${config.whatsapp.apiBaseUrl}/${mediaId}`;
-  const metaResp = await axios.get(metaUrl, {
+  const metaResp = await axios.get<{ url: string; mime_type: string }>(metaUrl, {
     headers: { Authorization: `Bearer ${config.whatsapp.accessToken}` },
   });
   const mediaUrl = metaResp.data.url;
   const mimeType = metaResp.data.mime_type;
 
   // Then download the actual media
-  const mediaResp = await axios.get(mediaUrl, {
+  const mediaResp = await axios.get<ArrayBuffer>(mediaUrl, {
     headers: { Authorization: `Bearer ${config.whatsapp.accessToken}` },
     responseType: 'arraybuffer',
   });
 
   return { buffer: Buffer.from(mediaResp.data), mimeType };
 }
-
-module.exports = { sendTextMessage, sendButtonMessage, sendListMessage, downloadMedia };

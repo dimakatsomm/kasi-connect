@@ -1,7 +1,5 @@
-'use strict';
-
-const winston = require('winston');
-const config = require('./index');
+import winston from 'winston';
+import config from './index';
 
 const logger = winston.createLogger({
   level: config.env === 'production' ? 'info' : 'debug',
@@ -14,13 +12,11 @@ const logger = winston.createLogger({
           winston.format.colorize(),
           winston.format.printf(({ timestamp, level, message, ...meta }) => {
             const metaStr = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
-            return `${timestamp} [${level}]: ${message}${metaStr}`;
+            return `${timestamp as string} [${level}]: ${message as string}${metaStr}`;
           })
         )
   ),
-  transports: [
-    new winston.transports.Console(),
-  ],
+  transports: [new winston.transports.Console()],
 });
 
-module.exports = logger;
+export default logger;

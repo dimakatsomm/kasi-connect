@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Session state machine states for KasiConnect order flow.
  *
@@ -11,20 +9,23 @@
  *   AWAITING_FULFILMENT_TYPE → ORDER_PLACED
  *   ORDER_PLACED → (terminal / reset on new order)
  */
-const SESSION_STATES = {
+export const SESSION_STATES = {
   AWAITING_VENDOR_TYPE: 'AWAITING_VENDOR_TYPE',
   AWAITING_ITEMS: 'AWAITING_ITEMS',
   AWAITING_CLARIFICATION: 'AWAITING_CLARIFICATION',
   AWAITING_CONFIRMATION: 'AWAITING_CONFIRMATION',
   AWAITING_FULFILMENT_TYPE: 'AWAITING_FULFILMENT_TYPE',
   ORDER_PLACED: 'ORDER_PLACED',
-};
+} as const;
+
+/** Union of all valid session state strings. */
+export type SessionState = (typeof SESSION_STATES)[keyof typeof SESSION_STATES];
 
 /**
  * Valid state transitions.
  * Maps current state → array of allowed next states.
  */
-const VALID_TRANSITIONS = {
+export const VALID_TRANSITIONS: Record<SessionState, SessionState[]> = {
   [SESSION_STATES.AWAITING_VENDOR_TYPE]: [SESSION_STATES.AWAITING_ITEMS],
   [SESSION_STATES.AWAITING_ITEMS]: [
     SESSION_STATES.AWAITING_CLARIFICATION,
@@ -42,5 +43,3 @@ const VALID_TRANSITIONS = {
   [SESSION_STATES.AWAITING_FULFILMENT_TYPE]: [SESSION_STATES.ORDER_PLACED],
   [SESSION_STATES.ORDER_PLACED]: [SESSION_STATES.AWAITING_VENDOR_TYPE],
 };
-
-module.exports = { SESSION_STATES, VALID_TRANSITIONS };

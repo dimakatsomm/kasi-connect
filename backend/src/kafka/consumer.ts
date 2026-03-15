@@ -1,14 +1,12 @@
-'use strict';
+import { Kafka, Consumer, logLevel } from 'kafkajs';
+import config from '../config';
+import logger from '../config/logger';
+import * as whatsappService from '../services/whatsappService';
+import * as db from '../db';
 
-const { Kafka, logLevel } = require('kafkajs');
-const config = require('../config');
-const logger = require('../config/logger');
-const whatsappService = require('../services/whatsappService');
-const db = require('../db');
+let consumer: Consumer | undefined;
 
-let consumer;
-
-async function startConsumer() {
+export async function startConsumer(): Promise<void> {
   const kafka = new Kafka({
     clientId: `${config.kafka.clientId}-consumer`,
     brokers: config.kafka.brokers,
@@ -29,16 +27,22 @@ async function startConsumer() {
   await consumer.run({
     eachMessage: async ({ topic, message }) => {
       try {
-        const payload = JSON.parse(message.value.toString());
+        const value = (message.value ?? '{}').toString();
+        const payload = JSON.parse(value) as Record<string, unknown>;
         logger.debug('Kafka message received', { topic });
 
         if (topic === config.kafka.topics.orderReady) {
-          await handleOrderReady(payload);
+          await handleOrderReady(payload as { orderId: string; customerId: string });
         } else if (topic === config.kafka.topics.specialsBroadcast) {
-          await handleSpecialsBroadcast(payload);
+          await handleSpecialsBroadcast(
+            payload as { message: string; vendorId: string }
+          );
         }
       } catch (err) {
-        logger.error('Failed to process Kafka message', { topic, error: err.message });
+        logger.error('Failed to process Kafka message', {
+          topic,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     },
   });
@@ -49,9 +53,14 @@ async function startConsumer() {
 /**
  * When an order is marked ready, notify the customer via WhatsApp.
  */
-async function handleOrderReady({ orderId, customerId }) {
+async function handleOrderReady({
+  orderId,
+}: {
+  orderId: string;
+  customerId: string;
+}): Promise<void> {
   try {
-    const result = await db.query(
+    const result = await db.query<{ phone: string; fulfilment_type: string }>(
       `SELECT o.fulfilment_type, c.phone
        FROM orders o
        JOIN customers c ON c.id = o.customer_id
@@ -66,19 +75,31 @@ async function handleOrderReady({ orderId, customerId }) {
         ? 'Your order is ready and will be delivered shortly! 🛵'
         : 'Your order is ready for collection! Come pick it up 🎉';
 
-    await whatsappService.sendTextMessage(phone, `✅ *Order Ready!*\n\n${collectMsg}`);
+    await whatsappService.sendTextMessage(
+      phone,
+      `✅ *Order Ready!*\n\n${collectMsg}`
+    );
     logger.info('Order ready notification sent', { orderId, phone });
   } catch (err) {
-    logger.error('Failed to send order ready notification', { orderId, error: err.message });
+    logger.error('Failed to send order ready notification', {
+      orderId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
 /**
  * Broadcast a daily special to all customers who ordered in the last 30 days.
  */
-async function handleSpecialsBroadcast({ message, vendorId }) {
+async function handleSpecialsBroadcast({
+  message,
+  vendorId,
+}: {
+  message: string;
+  vendorId: string;
+}): Promise<void> {
   try {
-    const result = await db.query(
+    const result = await db.query<{ phone: string }>(
       `SELECT DISTINCT c.phone
        FROM customers c
        JOIN orders o ON o.customer_id = c.id
@@ -90,22 +111,29 @@ async function handleSpecialsBroadcast({ message, vendorId }) {
     for (const { phone } of result.rows) {
       await whatsappService
         .sendTextMessage(phone, `🌟 *Daily Special!*\n\n${message}`)
-        .catch((err) =>
-          logger.warn('Failed to send special to customer', { phone, error: err.message })
+        .catch((err: Error) =>
+          logger.warn('Failed to send special to customer', {
+            phone,
+            error: err.message,
+          })
         );
     }
 
-    logger.info('Specials broadcast sent', { vendorId, count: result.rows.length });
+    logger.info('Specials broadcast sent', {
+      vendorId,
+      count: result.rows.length,
+    });
   } catch (err) {
-    logger.error('Failed to broadcast special', { vendorId, error: err.message });
+    logger.error('Failed to broadcast special', {
+      vendorId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
-async function stopConsumer() {
+export async function stopConsumer(): Promise<void> {
   if (consumer) {
     await consumer.disconnect();
     logger.info('Kafka consumer stopped');
   }
 }
-
-module.exports = { startConsumer, stopConsumer };

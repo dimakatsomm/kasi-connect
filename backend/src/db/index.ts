@@ -1,16 +1,13 @@
-'use strict';
+import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
+import config from '../config';
+import logger from '../config/logger';
 
-const { Pool } = require('pg');
-const config = require('../config');
-const logger = require('../config/logger');
-
-let pool;
+let pool: Pool | undefined;
 
 /**
- * Returns the singleton pg Pool instance.
- * Creates it on first call.
+ * Returns the singleton pg Pool instance. Creates it on first call.
  */
-function getPool() {
+function getPool(): Pool {
   if (!pool) {
     pool = new Pool({
       host: config.db.host,
@@ -24,7 +21,7 @@ function getPool() {
       connectionTimeoutMillis: 2000,
     });
 
-    pool.on('error', (err) => {
+    pool.on('error', (err: Error) => {
       logger.error('Unexpected error on idle pg client', { error: err.message });
     });
 
@@ -35,12 +32,15 @@ function getPool() {
 
 /**
  * Execute a parameterised query.
- * @param {string} text  SQL statement
- * @param {Array}  params Query parameters
+ * @param text   SQL statement
+ * @param params Query parameters
  */
-async function query(text, params) {
+async function query<T extends QueryResultRow = QueryResultRow>(
+  text: string,
+  params?: unknown[]
+): Promise<QueryResult<T>> {
   const start = Date.now();
-  const res = await getPool().query(text, params);
+  const res = await getPool().query<T>(text, params);
   const duration = Date.now() - start;
   logger.debug('Executed query', { text, duration, rows: res.rowCount });
   return res;
@@ -49,8 +49,8 @@ async function query(text, params) {
 /**
  * Acquire a client for transactions.
  */
-async function getClient() {
+async function getClient(): Promise<PoolClient> {
   return getPool().connect();
 }
 
-module.exports = { query, getClient, getPool };
+export { query, getClient, getPool };

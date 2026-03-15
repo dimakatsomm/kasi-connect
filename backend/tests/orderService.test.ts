@@ -1,9 +1,9 @@
-'use strict';
-
-const {
+import {
   estimateReadyTime,
   getNextQueuePosition,
-} = require('../src/services/orderService');
+  upsertCustomer,
+  getCustomerByPhone,
+} from '../src/services/orderService';
 
 // Mock database
 jest.mock('../src/db', () => ({
@@ -16,8 +16,7 @@ jest.mock('../src/kafka/producer', () => ({
   publishEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
-const db = require('../src/db');
-const { upsertCustomer, getCustomerByPhone } = require('../src/services/orderService');
+import * as db from '../src/db';
 
 describe('Order Service — estimateReadyTime', () => {
   test('returns a future Date', () => {
@@ -30,7 +29,7 @@ describe('Order Service — estimateReadyTime', () => {
     const result = estimateReadyTime(1);
     const diffMs = result.getTime() - Date.now();
     expect(diffMs).toBeGreaterThanOrEqual(14 * 60 * 1000); // at least 14 min
-    expect(diffMs).toBeLessThanOrEqual(16 * 60 * 1000);   // at most 16 min
+    expect(diffMs).toBeLessThanOrEqual(16 * 60 * 1000); // at most 16 min
   });
 
   test('higher queue position gives later time', () => {
@@ -49,13 +48,17 @@ describe('Order Service — estimateReadyTime', () => {
 
 describe('Order Service — getNextQueuePosition', () => {
   test('returns count + 1', async () => {
-    db.query.mockResolvedValueOnce({ rows: [{ count: '3' }] });
+    (db.query as jest.Mock).mockResolvedValueOnce({
+      rows: [{ count: '3' }],
+    });
     const pos = await getNextQueuePosition('vendor1');
     expect(pos).toBe(4);
   });
 
   test('returns 1 when queue is empty', async () => {
-    db.query.mockResolvedValueOnce({ rows: [{ count: '0' }] });
+    (db.query as jest.Mock).mockResolvedValueOnce({
+      rows: [{ count: '0' }],
+    });
     const pos = await getNextQueuePosition('vendor1');
     expect(pos).toBe(1);
   });
@@ -67,9 +70,11 @@ describe('Order Service — upsertCustomer', () => {
       id: 'c1',
       phone: '+27821234567',
       name: null,
-      created_at: new Date(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_order_id: null,
     };
-    db.query.mockResolvedValueOnce({ rows: [mockCustomer] });
+    (db.query as jest.Mock).mockResolvedValueOnce({ rows: [mockCustomer] });
 
     const customer = await upsertCustomer('+27821234567');
     expect(customer.phone).toBe('+27821234567');
@@ -78,15 +83,22 @@ describe('Order Service — upsertCustomer', () => {
 
 describe('Order Service — getCustomerByPhone', () => {
   test('returns customer when found', async () => {
-    const mockCustomer = { id: 'c1', phone: '+27821234567' };
-    db.query.mockResolvedValueOnce({ rows: [mockCustomer] });
+    const mockCustomer = {
+      id: 'c1',
+      phone: '+27821234567',
+      name: null,
+      last_order_id: null,
+      created_at: '',
+      updated_at: '',
+    };
+    (db.query as jest.Mock).mockResolvedValueOnce({ rows: [mockCustomer] });
 
     const customer = await getCustomerByPhone('+27821234567');
     expect(customer).toEqual(mockCustomer);
   });
 
   test('returns null when not found', async () => {
-    db.query.mockResolvedValueOnce({ rows: [] });
+    (db.query as jest.Mock).mockResolvedValueOnce({ rows: [] });
 
     const customer = await getCustomerByPhone('+27821999999');
     expect(customer).toBeNull();

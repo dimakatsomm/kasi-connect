@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * NLP Parser for South African multi-language order text.
  *
@@ -13,14 +11,16 @@
  *  1. Normalise input (lowercase, remove punctuation)
  *  2. Replace SA-language "want/give me" phrases with a marker so we know
  *     everything after is the item list
- *  3. Split on conjunctions (and / le / le / na / ni) and commas
+ *  3. Split on conjunctions (and / le / na / ni) and commas
  *  4. For each segment, extract optional quantity word/digit + item name
- *  5. Return structured [ { quantity, raw, normalised } ]
+ *  5. Return structured [ { quantity, raw, name } ]
  */
+
+import type { ParsedItem } from '../types';
 
 // ── Number word maps ──────────────────────────────────────────────────────────
 
-const NUMBER_WORDS = {
+const NUMBER_WORDS: Record<string, number> = {
   one: 1,
   a: 1,
   an: 1,
@@ -47,7 +47,7 @@ const NUMBER_WORDS = {
 
 // ── "I want" / "give me" phrases to strip ─────────────────────────────────────
 
-const WANT_PHRASES = [
+const WANT_PHRASES: RegExp[] = [
   // Zulu
   /\bngifuna\b/gi,
   /\bngicela\b/gi,
@@ -68,21 +68,17 @@ const WANT_PHRASES = [
   /\bi need\b/gi,
 ];
 
-// ── Conjunctions used to split item lists ─────────────────────────────────────
-
-// Match " and ", " le ", " na ", " ni ", comma, semicolon
-const CONJUNCTION_RE = /\s+(and|le|na|ni)\s+|[,;]+\s*/gi;
-
 // ── Ordinal/noise words to drop ───────────────────────────────────────────────
 
-const NOISE_RE = /\b(please|asseblief|ngiyabonga|ke a leboga|thanks|thank you)\b/gi;
+const NOISE_RE =
+  /\b(please|asseblief|ngiyabonga|ke a leboga|thanks|thank you)\b/gi;
 
 /**
  * Normalise a raw order string.
- * @param {string} text
- * @returns {string}
+ * @param text
+ * @returns Normalised string
  */
-function normalise(text) {
+export function normalise(text: string): string {
   return text
     .toLowerCase()
     .replace(/[^\w\s]/g, ' ') // strip punctuation
@@ -92,10 +88,10 @@ function normalise(text) {
 
 /**
  * Strip "I want / give me" opener phrases.
- * @param {string} text  Already normalised
- * @returns {string}
+ * @param text  Already normalised
+ * @returns Cleaned string
  */
-function stripWantPhrases(text) {
+function stripWantPhrases(text: string): string {
   let result = text;
   for (const re of WANT_PHRASES) {
     result = result.replace(re, '');
@@ -105,17 +101,22 @@ function stripWantPhrases(text) {
 
 /**
  * Parse a single item segment like "2 breads", "two milk", "pap", "a coke".
- * @param {string} segment
- * @returns {{ quantity: number, name: string } | null}
+ * @param segment
+ * @returns Parsed item or null
  */
-function parseSegment(segment) {
+function parseSegment(
+  segment: string
+): { quantity: number; name: string } | null {
   const trimmed = segment.trim();
   if (!trimmed) return null;
 
   // Try leading digit
   const digitMatch = trimmed.match(/^(\d+)\s+(.+)$/);
   if (digitMatch) {
-    return { quantity: parseInt(digitMatch[1], 10), name: digitMatch[2].trim() };
+    return {
+      quantity: parseInt(digitMatch[1], 10),
+      name: digitMatch[2].trim(),
+    };
   }
 
   // Try leading number word
@@ -135,15 +136,15 @@ function parseSegment(segment) {
 /**
  * Extract ordered items from a WhatsApp message.
  *
- * @param {string} text  Raw message text (any supported SA language)
- * @returns {Array<{ quantity: number, name: string, raw: string }>}
+ * @param text  Raw message text (any supported SA language), or null/undefined
+ * @returns Array of parsed items
  *
  * @example
  * parseOrderText("ke kgopela two breads le milk")
  * // → [{ quantity: 2, name: "breads", raw: "two breads" },
  * //    { quantity: 1, name: "milk", raw: "milk" }]
  */
-function parseOrderText(text) {
+export function parseOrderText(text: string | null | undefined): ParsedItem[] {
   if (!text || typeof text !== 'string') return [];
 
   // Work on lowercased text to simplify regex matching
@@ -156,10 +157,11 @@ function parseOrderText(text) {
   processed = stripWantPhrases(processed);
 
   // Split on commas/semicolons AND conjunctions (and / le / na / ni)
-  // Do this BEFORE normalising so commas are still in the string
-  const rawSegments = processed.split(/[,;]+|\s+(and|le|na|ni)\s+/gi).filter(Boolean);
+  const rawSegments = processed
+    .split(/[,;]+|\s+(and|le|na|ni)\s+/gi)
+    .filter(Boolean);
 
-  const results = [];
+  const results: ParsedItem[] = [];
   for (const seg of rawSegments) {
     // Skip bare conjunction words that appear as captured groups
     if (/^(and|le|na|ni)$/i.test(seg.trim())) continue;
@@ -168,7 +170,7 @@ function parseOrderText(text) {
     if (!cleaned) continue;
 
     const parsed = parseSegment(cleaned);
-    if (parsed && parsed.name) {
+    if (parsed?.name) {
       results.push({ ...parsed, raw: seg.trim() });
     }
   }
@@ -179,17 +181,18 @@ function parseOrderText(text) {
 /**
  * Detect which SA language the text is likely in.
  * Returns 'zulu' | 'sepedi' | 'setswana' | 'english' | 'unknown'.
- * @param {string} text
+ * @param text
  */
-function detectLanguage(text) {
+export function detectLanguage(
+  text: string
+): 'zulu' | 'sepedi' | 'setswana' | 'english' | 'unknown' {
   const lower = text.toLowerCase();
 
   if (/\b(ngifuna|ngicela|ngidinga|ngiyabonga)\b/.test(lower)) return 'zulu';
-  if (/\b(ke kgopela|ke batla|ke a leboga|le|nka kopa)\b/.test(lower)) return 'sepedi';
+  if (/\b(ke kgopela|ke batla|ke a leboga|le|nka kopa)\b/.test(lower))
+    return 'sepedi';
   if (/\b(ke batla|ke rata|ke a leboga)\b/.test(lower)) return 'setswana';
   if (/\b(i want|give me|i need|please)\b/.test(lower)) return 'english';
 
   return 'unknown';
 }
-
-module.exports = { parseOrderText, detectLanguage, normalise };

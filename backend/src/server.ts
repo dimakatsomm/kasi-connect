@@ -1,20 +1,19 @@
-'use strict';
-
-require('dotenv').config();
-
-const app = require('./app');
-const config = require('./config');
-const logger = require('./config/logger');
-const { startConsumer } = require('./kafka/consumer');
+import app from './app';
+import config from './config';
+import logger from './config/logger';
+import { startConsumer } from './kafka/consumer';
+import { disconnectProducer } from './kafka/producer';
 
 const PORT = config.port;
 
-async function start() {
+async function start(): Promise<void> {
   // Start Kafka consumer (non-fatal if Kafka is not available in dev)
   try {
     await startConsumer();
   } catch (err) {
-    logger.warn('Kafka consumer failed to start (non-fatal in dev)', { error: err.message });
+    logger.warn('Kafka consumer failed to start (non-fatal in dev)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   const server = app.listen(PORT, () => {
@@ -25,13 +24,14 @@ async function start() {
   });
 
   // Graceful shutdown
-  const shutdown = async (signal) => {
+  const shutdown = async (signal: string): Promise<void> => {
     logger.info(`${signal} received — shutting down gracefully`);
     server.close(async () => {
       try {
-        const { disconnectProducer } = require('./kafka/producer');
         await disconnectProducer();
-      } catch (_) { /* ignore */ }
+      } catch {
+        // ignore
+      }
       process.exit(0);
     });
 
@@ -41,11 +41,11 @@ async function start() {
     }, 10000);
   };
 
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
 }
 
-start().catch((err) => {
+start().catch((err: Error) => {
   logger.error('Failed to start server', { error: err.message });
   process.exit(1);
 });

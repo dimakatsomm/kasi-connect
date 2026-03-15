@@ -1,19 +1,22 @@
-'use strict';
+import express, {
+  Application,
+  Request,
+  Response,
+  NextFunction,
+  ErrorRequestHandler,
+} from 'express';
+import helmet from 'helmet';
+import cors from 'cors';
+import morgan from 'morgan';
+import rateLimit from 'express-rate-limit';
 
-const express = require('express');
-const helmet = require('helmet');
-const cors = require('cors');
-const morgan = require('morgan');
-const rateLimit = require('express-rate-limit');
+import logger from './config/logger';
+import webhookRouter from './routes/webhook';
+import ordersRouter from './routes/orders';
+import productsRouter from './routes/products';
+import vendorsRouter from './routes/vendors';
 
-const config = require('./config');
-const logger = require('./config/logger');
-const webhookRouter = require('./routes/webhook');
-const ordersRouter = require('./routes/orders');
-const productsRouter = require('./routes/products');
-const vendorsRouter = require('./routes/vendors');
-
-const app = express();
+const app: Application = express();
 
 // ── Security middleware ───────────────────────────────────────────────────────
 app.use(helmet());
@@ -22,7 +25,7 @@ app.use(cors());
 // ── Request logging ───────────────────────────────────────────────────────────
 app.use(
   morgan('combined', {
-    stream: { write: (msg) => logger.info(msg.trim()) },
+    stream: { write: (msg: string) => logger.info(msg.trim()) },
   })
 );
 
@@ -40,7 +43,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ── Health check ──────────────────────────────────────────────────────────────
-app.get('/health', (_req, res) => {
+app.get('/health', (_req: Request, res: Response): void => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
@@ -51,15 +54,21 @@ app.use('/api/products', productsRouter);
 app.use('/api/vendors', vendorsRouter);
 
 // ── 404 handler ───────────────────────────────────────────────────────────────
-app.use((_req, res) => {
+app.use((_req: Request, res: Response): void => {
   res.status(404).json({ error: 'Not found' });
 });
 
 // ── Error handler ─────────────────────────────────────────────────────────────
-// eslint-disable-next-line no-unused-vars
-app.use((err, _req, res, _next) => {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const errorHandler: ErrorRequestHandler = (
+  err: Error,
+  _req: Request,
+  res: Response,
+  _next: NextFunction
+): void => {
   logger.error('Unhandled error', { error: err.message, stack: err.stack });
   res.status(500).json({ error: 'Internal server error' });
-});
+};
+app.use(errorHandler);
 
-module.exports = app;
+export default app;
