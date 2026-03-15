@@ -177,7 +177,7 @@ router.patch(
             ? parseFloat(deliveryFeeValue)
             : NaN;
       if (!Number.isFinite(parsed) || parsed < 0) {
-        res.status(400).json({ error: 'delivery_fee must be a non-negative number' });
+        res.status(400).json({ error: 'Delivery fee must be a valid number greater than or equal to 0 (e.g. 25 or 9.99)' });
         return;
       }
       data.delivery_fee = parsed;
