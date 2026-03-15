@@ -139,6 +139,8 @@ router.patch(
     const readField = (field: string): unknown =>
       bodyData[toCamel(field)] ?? bodyData[field];
 
+    const validationErrors: string[] = [];
+
     const maybeAssign = <K extends keyof Prisma.ProductUpdateInput>(
       field: K
     ): void => {
@@ -155,16 +157,33 @@ router.patch(
       }
 
       if (field === 'stock_level' || field === 'low_stock_threshold') {
-        const n = parseInt(String(value), 10);
-        if (Number.isFinite(n)) {
-          data[field] = n as Prisma.ProductUpdateInput[K];
+        const strVal = String(value).trim();
+        if (!/^\d+$/.test(strVal)) {
+          validationErrors.push(`Invalid value for ${String(field)}: must be an integer`);
+          return;
         }
+        data[field] = parseInt(strVal, 10) as Prisma.ProductUpdateInput[K];
         return;
       }
 
       if (field === 'is_available' || field === 'is_special') {
         const strVal = String(value).toLowerCase();
+        if (!['true', 'false', '1', '0'].includes(strVal)) {
+          validationErrors.push(`Invalid value for ${String(field)}: must be true or false`);
+          return;
+        }
         data[field] = (strVal === 'true' || strVal === '1') as Prisma.ProductUpdateInput[K];
+        return;
+      }
+
+      if (field === 'price' || field === 'special_price') {
+        const strVal = String(value).trim();
+        const n = parseFloat(strVal);
+        if (!Number.isFinite(n) || !/^\d+(\.\d+)?$/.test(strVal)) {
+          validationErrors.push(`Invalid value for ${String(field)}: must be a valid number`);
+          return;
+        }
+        data[field] = n as Prisma.ProductUpdateInput[K];
         return;
       }
 
@@ -180,6 +199,11 @@ router.patch(
     maybeAssign('is_special');
     maybeAssign('special_price');
     maybeAssign('aliases');
+
+    if (validationErrors.length > 0) {
+      res.status(400).json({ errors: validationErrors });
+      return;
+    }
 
     if (req.file) {
       data.image_url = `/uploads/${req.file.originalname}`;

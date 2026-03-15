@@ -83,18 +83,11 @@ router.get(
 
       const { customer, order_items, ...orderData } = order;
 
-      const enrichedOrder: OrderRow & {
-        customer_phone: string;
-        customer_name: string | null;
-        items: Array<{
-          productId: string;
-          productName: string;
-          quantity: number;
-          unitPrice: number;
-          totalPrice: number;
-        }>;
-      } = {
+      const enrichedOrder = {
         ...(orderData as OrderRow),
+        subtotal: decimalToNumber((orderData as OrderRow).subtotal),
+        delivery_fee: decimalToNumber((orderData as OrderRow).delivery_fee),
+        total: decimalToNumber((orderData as OrderRow).total),
         customer_phone: customer?.phone ?? '',
         customer_name: customer?.name ?? null,
         items: order_items.map(
