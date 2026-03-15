@@ -20,6 +20,7 @@ This module provisions the core KasiConnect platform primitives on Huawei Cloud 
 4. **SSH public key** you are comfortable installing on every worker node (pass via `ssh_public_key`).
 
 ## Directory Layout
+
 | File | Purpose |
 | --- | --- |
 | `main.tf` | Provider definition, shared locals, AZ discovery. |
