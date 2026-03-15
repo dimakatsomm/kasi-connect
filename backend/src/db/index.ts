@@ -1,56 +1,44 @@
-import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
+import { PrismaClient, Prisma } from '@prisma/client';
 import config from '../config';
 import logger from '../config/logger';
 
-let pool: Pool | undefined;
+declare global {
+  // eslint-disable-next-line no-var
+  var prisma: PrismaClient | undefined;
+}
 
-/**
- * Returns the singleton pg Pool instance. Creates it on first call.
- */
-function getPool(): Pool {
-  if (!pool) {
-    pool = new Pool({
-      host: config.db.host,
-      port: config.db.port,
-      database: config.db.name,
-      user: config.db.user,
-      password: config.db.password,
-      min: config.db.pool.min,
-      max: config.db.pool.max,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
-    });
+// Always emit error events; additionally emit warnings in development.
+const errorLogDef: Prisma.LogDefinition = { emit: 'event', level: 'error' };
+const warnLogDef: Prisma.LogDefinition = { emit: 'event', level: 'warn' };
 
-    pool.on('error', (err: Error) => {
-      logger.error('Unexpected error on idle pg client', { error: err.message });
-    });
+const prismaClient =
+  globalThis.prisma ??
+  new PrismaClient({
+    log: config.env === 'development' ? [errorLogDef, warnLogDef] : [errorLogDef],
+  });
 
-    logger.info('PostgreSQL connection pool created');
+// Forward Prisma log events to the application logger so warnings/errors
+// are not silently dropped when emit:'event' is configured.
+// Prisma's $on overloads are typed from the literal log config; the type assertion
+// is the standard pattern when log config is not a compile-time literal.
+(prismaClient as PrismaClient<Prisma.PrismaClientOptions, 'error' | 'warn'>).$on(
+  'error',
+  (e: Prisma.LogEvent) => {
+    logger.error('Prisma error', { message: e.message, target: e.target });
   }
-  return pool;
+);
+
+if (config.env === 'development') {
+  (prismaClient as PrismaClient<Prisma.PrismaClientOptions, 'error' | 'warn'>).$on(
+    'warn',
+    (e: Prisma.LogEvent) => {
+      logger.warn('Prisma warning', { message: e.message, target: e.target });
+    }
+  );
 }
 
-/**
- * Execute a parameterised query.
- * @param text   SQL statement
- * @param params Query parameters
- */
-async function query<T extends QueryResultRow = QueryResultRow>(
-  text: string,
-  params?: unknown[]
-): Promise<QueryResult<T>> {
-  const start = Date.now();
-  const res = await getPool().query<T>(text, params);
-  const duration = Date.now() - start;
-  logger.debug('Executed query', { text, duration, rows: res.rowCount });
-  return res;
+if (config.env !== 'production') {
+  globalThis.prisma = prismaClient;
 }
 
-/**
- * Acquire a client for transactions.
- */
-async function getClient(): Promise<PoolClient> {
-  return getPool().connect();
-}
-
-export { query, getClient, getPool };
+export default prismaClient;

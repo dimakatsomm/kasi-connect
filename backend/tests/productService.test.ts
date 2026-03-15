@@ -1,13 +1,25 @@
-import { buildOrderSummary } from '../src/services/productService';
+import { Prisma } from '@prisma/client';
+const { Decimal } = Prisma;
+import { buildOrderSummary, matchProducts } from '../src/services/productService';
 import type { MatchedItem } from '../src/types';
 
-// We mock the db module so matchProducts can be tested without a live database
+// Mock the prisma client so matchProducts can be tested without a live database
 jest.mock('../src/db', () => ({
-  query: jest.fn(),
+  __esModule: true,
+  default: {
+    product: {
+      findMany: jest.fn(),
+    },
+  },
 }));
 
-import * as db from '../src/db';
-import { matchProducts } from '../src/services/productService';
+import prisma from '../src/db';
+type PrismaMock = {
+  product: {
+    findMany: jest.Mock;
+  };
+};
+const mockedPrisma = prisma as unknown as PrismaMock;
 
 // Helper to create a minimal MatchedItem for buildOrderSummary tests
 function makeItem(
@@ -23,16 +35,16 @@ function makeItem(
       vendor_id: 'v0',
       name,
       description: null,
-      price,
+      price: new Decimal(price),
       image_url: null,
       stock_level: 10,
       low_stock_threshold: 5,
       is_available: true,
       is_special: specialPrice !== null,
-      special_price: specialPrice,
+      special_price: specialPrice ? new Decimal(specialPrice) : null,
       aliases: [],
-      created_at: '',
-      updated_at: '',
+      created_at: new Date(),
+      updated_at: new Date(),
     },
     quantity,
   };
@@ -82,7 +94,7 @@ describe('Product Service — matchProducts', () => {
     {
       id: 'p1',
       name: 'Bread',
-      price: '15.00',
+      price: new Decimal('15.00'),
       special_price: null,
       aliases: ['loaf', 'mkate'],
       vendor_id: 'v1',
@@ -98,7 +110,7 @@ describe('Product Service — matchProducts', () => {
     {
       id: 'p2',
       name: 'Full Cream Milk 1L',
-      price: '22.00',
+      price: new Decimal('22.00'),
       special_price: null,
       aliases: ['milk'],
       vendor_id: 'v1',
@@ -114,7 +126,7 @@ describe('Product Service — matchProducts', () => {
     {
       id: 'p3',
       name: 'Coca-Cola 500ml',
-      price: '18.00',
+      price: new Decimal('18.00'),
       special_price: null,
       aliases: ['coke', 'cola'],
       vendor_id: 'v1',
@@ -130,7 +142,7 @@ describe('Product Service — matchProducts', () => {
     {
       id: 'p4',
       name: 'Pap 500g',
-      price: '12.00',
+      price: new Decimal('12.00'),
       special_price: null,
       aliases: ['pap', 'phutu'],
       vendor_id: 'v1',
@@ -146,7 +158,7 @@ describe('Product Service — matchProducts', () => {
   ];
 
   beforeEach(() => {
-    (db.query as jest.Mock).mockResolvedValue({ rows: mockProducts });
+    mockedPrisma.product.findMany.mockResolvedValue(mockProducts);
   });
 
   test('matches exact product names', async () => {
@@ -177,7 +189,7 @@ describe('Product Service — matchProducts', () => {
   });
 
   test('returns empty arrays for empty vendor catalogue', async () => {
-    (db.query as jest.Mock).mockResolvedValueOnce({ rows: [] });
+    mockedPrisma.product.findMany.mockResolvedValueOnce([]);
     const parsedItems = [{ quantity: 1, name: 'bread', raw: 'bread' }];
     const { matched, unmatched } = await matchProducts('vendor1', parsedItems);
     expect(matched).toHaveLength(0);

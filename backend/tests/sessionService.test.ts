@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+const { Decimal } = Prisma;
 import { SESSION_STATES, VALID_TRANSITIONS } from '../src/services/sessionStates';
 
 // Mock ioredis
@@ -131,7 +133,7 @@ describe('Session Service', () => {
               vendor_id: 'v1',
               name: 'Bread',
               description: null,
-              price: '15.00',
+              price: new Decimal('15.00'),
               image_url: null,
               stock_level: 10,
               low_stock_threshold: 5,
@@ -139,8 +141,8 @@ describe('Session Service', () => {
               is_special: false,
               special_price: null,
               aliases: [],
-              created_at: '',
-              updated_at: '',
+              created_at: new Date(),
+              updated_at: new Date(),
             },
             quantity: 1,
           },
