@@ -42,7 +42,7 @@ model Vendor {
   delivery_fee     Decimal        @default(0) @db.Decimal(10, 2)
   is_active        Boolean        @default(true)
   created_at       DateTime       @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
   products         Product[]
   orders           Order[]
   vendor_users     VendorUser[]
@@ -57,7 +57,7 @@ model Customer {
   name          String?  @db.VarChar(255)
   last_order_id String?  @db.Uuid
   created_at    DateTime @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @updatedAt @db.Timestamptz(6)
   orders        Order[]  @relation("CustomerOrders")
 
   @@map("customers")
@@ -77,7 +77,7 @@ model Product {
   special_price       Decimal?       @db.Decimal(10, 2)
   aliases             String[]       @default([]) @db.Text
   created_at          DateTime       @default(now()) @db.Timestamptz(6)
-  updated_at          DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
   vendor              Vendor         @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
   order_items         OrderItem[]
   daily_specials      DailySpecial[]
@@ -101,7 +101,7 @@ model Order {
   estimated_ready_time DateTime?      @db.Timestamptz(6)
   notes                String?        @db.Text
   created_at           DateTime       @default(now()) @db.Timestamptz(6)
-  updated_at           DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
   vendor               Vendor         @relation(fields: [vendor_id], references: [id])
   customer             Customer       @relation("CustomerOrders", fields: [customer_id], references: [id])
   order_items          OrderItem[]
@@ -150,7 +150,7 @@ model VendorUser {
   name          String?  @db.VarChar(255)
   role          String   @default("owner") @db.VarChar(50)
   created_at    DateTime @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @updatedAt @db.Timestamptz(6)
   vendor        Vendor   @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
 
   @@map("vendor_users")
