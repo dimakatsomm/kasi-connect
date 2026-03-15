@@ -3,10 +3,10 @@
 This module provisions the core KasiConnect platform primitives on Huawei Cloud using Terraform. It codifies networking, compute, and data plane services so staging/production regions can be spun up consistently.
 
 ## What Gets Created
-- **Networking** – single VPC (/16) plus public, application, and data subnets, shared security group, and optional Elastic IP for the CCE API server.
-- **Compute** – Huawei Cloud Container Engine (CCE) cluster with configurable node pool backed by your SSH key pair.
-- **Data plane** – GaussDB (PostgreSQL) RDS instance, DCS (Redis) cache, DMS Kafka instance with the `order-events` topic managed in Terraform.
-- **Object storage** – OBS bucket for vendor media with optional static website hosting for CDN-style delivery.
+- **Networking** â€“ single VPC (/16) plus public, application, and data subnets, shared security group, and optional Elastic IP for the CCE API server.
+- **Compute** â€“ Huawei Cloud Container Engine (CCE) cluster with configurable node pool backed by your SSH key pair.
+- **Data plane** â€“ GaussDB (PostgreSQL) RDS instance, DCS (Redis) cache, DMS Kafka instance with the `<prefix>-orders` topic managed in Terraform.
+- **Object storage** â€“ OBS bucket for vendor media with optional static website hosting for CDN-style delivery.
 
 ## Prerequisites
 1. **Terraform 1.6+** installed locally (or use Terraform Cloud).
@@ -28,7 +28,7 @@ This module provisions the core KasiConnect platform primitives on Huawei Cloud 
 | `cce.tf` | CCE cluster plus worker nodes + key pair. |
 | `database.tf` | GaussDB/PostgreSQL instance including backup policy. |
 | `cache.tf` | Redis (DCS) instance with optional password overrides. |
-| `messaging.tf` | DMS Kafka instance and the managed `order-events` topic. |
+| `messaging.tf` | DMS Kafka instance and the managed `<prefix>-orders` topic. |
 | `storage.tf` | OBS bucket (with optional static website hosting). |
 | `outputs.tf` | Connection metadata surfaced after `terraform apply`. |
 | `terraform.tfvars.example` | Starter values you can copy into your own tfvars file. |
@@ -65,10 +65,10 @@ This module provisions the core KasiConnect platform primitives on Huawei Cloud 
    ```
 
 ## Operations Tips
-- **Scaling nodes** – adjust `cce_node_count` (and optionally `cce_node_flavor`) then re-apply.
-- **Credentials** – leave the password variables empty to auto-generate values with `random_password`; Terraform state will contain the generated secrets, so store it securely (e.g., in a remote backend with encryption).
-- **Network hardening** – tighten `trusted_cidrs` and `http_ingress_cidrs` for production to allow only bastion/VPN ranges.
-- **Static assets** – turn on `obs_enable_static_website` when you want OBS to serve the vendor dashboard assets or marketing sites directly.
+- **Scaling nodes** â€“ adjust `cce_node_count` (and optionally `cce_node_flavor`) then re-apply.
+- **Credentials** â€“ leave the password variables empty to auto-generate values with `random_password`; Terraform state will contain the generated secrets, so store it securely (e.g., in a remote backend with encryption).
+- **Network hardening** â€“ tighten `trusted_cidrs` and `http_ingress_cidrs` for production to allow only bastion/VPN ranges.
+- **Static assets** â€“ turn on `obs_enable_static_website` when you want OBS to serve the vendor dashboard assets or marketing sites directly.
 
 ## Destroying
 To fully tear down the environment (non-production only!), run:

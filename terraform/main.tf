@@ -22,7 +22,7 @@ provider "huaweicloud" {
 }
 
 locals {
-  resource_prefix = lower(replace("${var.project_name}-${var.environment}", "[^a-z0-9-]", ""))
+  resource_prefix = lower(regexreplace("${var.project_name}-${var.environment}", "[^a-z0-9-]", ""))
   tags = merge({
     Project     = var.project_name
     Environment = var.environment

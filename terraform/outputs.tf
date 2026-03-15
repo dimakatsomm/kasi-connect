@@ -39,7 +39,7 @@ output "kafka_instance_id" {
 }
 
 output "kafka_topic" {
-  description = "Primary order-events topic managed via Terraform."
+  description = "Primary orders topic (named <prefix>-orders) managed via Terraform."
   value       = huaweicloud_dms_kafka_topic.order_events.name
 }
 
