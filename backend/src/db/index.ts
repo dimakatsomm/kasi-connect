@@ -2,6 +2,9 @@ import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import config from '../config';
 import logger from '../config/logger';
 
+// Export Prisma client for new code
+export { prisma, disconnectPrisma } from './prisma';
+
 let pool: Pool | undefined;
 
 /**

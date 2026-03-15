@@ -1,0 +1,163 @@
+// KasiConnect Database Schema
+// Prisma schema for PostgreSQL / Huawei GaussDB compatible
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Enums
+enum VendorType {
+  retail
+  food
+}
+
+enum FulfilmentType {
+  collection
+  delivery
+}
+
+enum OrderStatus {
+  pending
+  confirmed
+  preparing
+  ready
+  delivered
+  cancelled
+}
+
+// Models
+model Vendor {
+  id              String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name            String         @db.VarChar(255)
+  type            VendorType
+  phone           String         @unique @db.VarChar(20)
+  address         String?        @db.Text
+  whatsappNumber  String?        @map("whatsapp_number") @db.VarChar(20)
+  deliveryFee     Decimal        @default(0) @map("delivery_fee") @db.Decimal(10, 2)
+  isActive        Boolean        @default(true) @map("is_active")
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  products        Product[]
+  orders          Order[]
+  dailySpecials   DailySpecial[]
+  vendorUsers     VendorUser[]
+
+  @@map("vendors")
+}
+
+model Customer {
+  id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  phone        String    @unique @db.VarChar(20)
+  name         String?   @db.VarChar(255)
+  lastOrderId  String?   @map("last_order_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  orders       Order[]
+
+  @@map("customers")
+}
+
+model Product {
+  id                  String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  vendorId            String         @map("vendor_id") @db.Uuid
+  name                String         @db.VarChar(255)
+  description         String?        @db.Text
+  price               Decimal        @db.Decimal(10, 2)
+  imageUrl            String?        @map("image_url") @db.Text
+  stockLevel          Int            @default(0) @map("stock_level")
+  lowStockThreshold   Int            @default(5) @map("low_stock_threshold")
+  isAvailable         Boolean        @default(true) @map("is_available")
+  isSpecial           Boolean        @default(false) @map("is_special")
+  specialPrice        Decimal?       @map("special_price") @db.Decimal(10, 2)
+  aliases             String[]
+  createdAt           DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  vendor              Vendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  orderItems          OrderItem[]
+  dailySpecials       DailySpecial[]
+
+  @@index([vendorId], name: "idx_products_vendor_id")
+  @@index([isAvailable], name: "idx_products_is_available")
+  @@map("products")
+}
+
+model Order {
+  id                  String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  vendorId            String          @map("vendor_id") @db.Uuid
+  customerId          String          @map("customer_id") @db.Uuid
+  status              OrderStatus     @default(pending)
+  fulfilmentType      FulfilmentType  @default(collection) @map("fulfilment_type")
+  deliveryAddress     String?         @map("delivery_address") @db.Text
+  deliveryFee         Decimal         @default(0) @map("delivery_fee") @db.Decimal(10, 2)
+  subtotal            Decimal         @default(0) @db.Decimal(10, 2)
+  total               Decimal         @default(0) @db.Decimal(10, 2)
+  queuePosition       Int?            @map("queue_position")
+  estimatedReadyTime  DateTime?       @map("estimated_ready_time") @db.Timestamptz
+  notes               String?         @db.Text
+  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  vendor              Vendor          @relation(fields: [vendorId], references: [id])
+  customer            Customer        @relation(fields: [customerId], references: [id])
+  orderItems          OrderItem[]
+
+  @@index([vendorId], name: "idx_orders_vendor_id")
+  @@index([customerId], name: "idx_orders_customer_id")
+  @@index([status], name: "idx_orders_status")
+  @@index([createdAt], name: "idx_orders_created_at")
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  orderId     String    @map("order_id") @db.Uuid
+  productId   String    @map("product_id") @db.Uuid
+  quantity    Int       @default(1)
+  unitPrice   Decimal   @map("unit_price") @db.Decimal(10, 2)
+  totalPrice  Decimal   @map("total_price") @db.Decimal(10, 2)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product   @relation(fields: [productId], references: [id])
+
+  @@index([orderId], name: "idx_order_items_order_id")
+  @@map("order_items")
+}
+
+model DailySpecial {
+  id              String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  vendorId        String    @map("vendor_id") @db.Uuid
+  productId       String    @map("product_id") @db.Uuid
+  message         String    @db.Text
+  validDate       DateTime  @default(dbgenerated("CURRENT_DATE")) @map("valid_date") @db.Date
+  broadcastSentAt DateTime? @map("broadcast_sent_at") @db.Timestamptz
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  vendor          Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  product         Product   @relation(fields: [productId], references: [id])
+
+  @@map("daily_specials")
+}
+
+model VendorUser {
+  id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  vendorId     String    @map("vendor_id") @db.Uuid
+  email        String    @unique @db.VarChar(255)
+  passwordHash String    @map("password_hash") @db.Text
+  name         String?   @db.VarChar(255)
+  role         String    @default("owner") @db.VarChar(50)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  vendor       Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@map("vendor_users")
+}
