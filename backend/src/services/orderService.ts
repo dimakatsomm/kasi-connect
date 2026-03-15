@@ -104,8 +104,6 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderRow> 
 
   try {
     const order = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      // Determine vendor type inside the transaction so queue_position is
-      // assigned atomically (avoids races on concurrent food orders).
       const vendor = await tx.vendor.findUniqueOrThrow({ where: { id: vendorId } });
       let queuePosition: number | null = null;
       if (vendor.type === 'food') {
