@@ -33,8 +33,10 @@ export async function getVendorProducts(
   vendorId: string
 ): Promise<ProductRow[]> {
   const result = await db.query<ProductRow>(
-    `SELECT id, name, price, description, image_url, stock_level,
-            is_available, is_special, special_price, aliases
+    `SELECT id, vendor_id, name, price, description,
+            image_url, stock_level, low_stock_threshold,
+            is_available, is_special, special_price,
+            aliases, created_at, updated_at
      FROM products
      WHERE vendor_id = $1 AND is_available = TRUE
      ORDER BY name`,
