@@ -1,0 +1,157 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum VendorType {
+  retail
+  food
+
+  @@map("vendor_type")
+}
+
+enum FulfilmentType {
+  collection
+  delivery
+
+  @@map("fulfilment_type")
+}
+
+enum OrderStatus {
+  pending
+  confirmed
+  preparing
+  ready
+  delivered
+  cancelled
+
+  @@map("order_status")
+}
+
+model Vendor {
+  id               String         @id @default(uuid()) @db.Uuid
+  name             String         @db.VarChar(255)
+  type             VendorType
+  phone            String         @unique @db.VarChar(20)
+  address          String?        @db.Text
+  whatsapp_number  String?        @db.VarChar(20)
+  delivery_fee     Decimal        @default(0) @db.Decimal(10, 2)
+  is_active        Boolean        @default(true)
+  created_at       DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime       @default(now()) @db.Timestamptz(6)
+  products         Product[]
+  orders           Order[]
+  vendor_users     VendorUser[]
+  daily_specials   DailySpecial[]
+
+  @@map("vendors")
+}
+
+model Customer {
+  id            String   @id @default(uuid()) @db.Uuid
+  phone         String   @unique @db.VarChar(20)
+  name          String?  @db.VarChar(255)
+  last_order_id String?  @db.Uuid
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+  orders        Order[]  @relation("CustomerOrders")
+
+  @@map("customers")
+}
+
+model Product {
+  id                  String         @id @default(uuid()) @db.Uuid
+  vendor_id           String         @db.Uuid
+  name                String         @db.VarChar(255)
+  description         String?        @db.Text
+  price               Decimal        @db.Decimal(10, 2)
+  image_url           String?        @db.Text
+  stock_level         Int            @default(0)
+  low_stock_threshold Int            @default(5)
+  is_available        Boolean        @default(true)
+  is_special          Boolean        @default(false)
+  special_price       Decimal?       @db.Decimal(10, 2)
+  aliases             String[]       @default([]) @db.Text
+  created_at          DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime       @default(now()) @db.Timestamptz(6)
+  vendor              Vendor         @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+  order_items         OrderItem[]
+  daily_specials      DailySpecial[]
+
+  @@index([vendor_id], name: "idx_products_vendor_id")
+  @@index([is_available], name: "idx_products_is_available")
+  @@map("products")
+}
+
+model Order {
+  id                   String         @id @default(uuid()) @db.Uuid
+  vendor_id            String         @db.Uuid
+  customer_id          String         @db.Uuid
+  status               OrderStatus    @default(pending)
+  fulfilment_type      FulfilmentType @default(collection)
+  delivery_address     String?        @db.Text
+  delivery_fee         Decimal        @default(0) @db.Decimal(10, 2)
+  subtotal             Decimal        @default(0) @db.Decimal(10, 2)
+  total                Decimal        @default(0) @db.Decimal(10, 2)
+  queue_position       Int?
+  estimated_ready_time DateTime?
+  notes                String?        @db.Text
+  created_at           DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime       @default(now()) @db.Timestamptz(6)
+  vendor               Vendor         @relation(fields: [vendor_id], references: [id])
+  customer             Customer       @relation("CustomerOrders", fields: [customer_id], references: [id])
+  order_items          OrderItem[]
+
+  @@index([vendor_id], name: "idx_orders_vendor_id")
+  @@index([customer_id], name: "idx_orders_customer_id")
+  @@index([status], name: "idx_orders_status")
+  @@index([created_at], name: "idx_orders_created_at")
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String  @id @default(uuid()) @db.Uuid
+  order_id    String  @db.Uuid
+  product_id  String  @db.Uuid
+  quantity    Int     @default(1)
+  unit_price  Decimal @db.Decimal(10, 2)
+  total_price Decimal @db.Decimal(10, 2)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  order       Order   @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  product     Product @relation(fields: [product_id], references: [id])
+
+  @@index([order_id], name: "idx_order_items_order_id")
+  @@map("order_items")
+}
+
+model DailySpecial {
+  id                String    @id @default(uuid()) @db.Uuid
+  vendor_id         String    @db.Uuid
+  product_id        String    @db.Uuid
+  message           String    @db.Text
+  valid_date        DateTime  @default(dbgenerated("CURRENT_DATE")) @db.Date
+  broadcast_sent_at DateTime?
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  vendor            Vendor    @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+  product           Product   @relation(fields: [product_id], references: [id])
+
+  @@map("daily_specials")
+}
+
+model VendorUser {
+  id            String   @id @default(uuid()) @db.Uuid
+  vendor_id     String   @db.Uuid
+  email         String   @unique @db.VarChar(255)
+  password_hash String   @db.Text
+  name          String?  @db.VarChar(255)
+  role          String   @default("owner") @db.VarChar(50)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+  vendor        Vendor   @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+
+  @@map("vendor_users")
+}

@@ -1,10 +1,11 @@
+import prisma from '../db';
 import * as sessionService from '../services/sessionService';
 import { parseOrderText } from '../services/nlpService';
 import { matchProducts, buildOrderSummary } from '../services/productService';
 import * as orderService from '../services/orderService';
 import * as whatsappService from '../services/whatsappService';
 import { transcribeVoiceNote } from '../services/voiceService';
-import * as db from '../db';
+import { decimalToNumber } from '../utils/prisma';
 import logger from '../config/logger';
 import { SESSION_STATES } from '../services/sessionStates';
 import type { WhatsAppMessage, MatchedItem, LastOrderItem, VendorRow } from '../types';
@@ -119,10 +120,10 @@ async function handleGreetingState(from: string, text: string): Promise<void> {
   const lastOrder = customer ? await orderService.getLastOrder(customer.id) : null;
 
   // For MVP: find the first active vendor
-  const vendorResult = await db.query<VendorRow>(
-    `SELECT id, name, type FROM vendors WHERE is_active = TRUE LIMIT 1`
-  );
-  const vendor = vendorResult.rows[0];
+  const vendor = await prisma.vendor.findFirst({
+    where: { is_active: true },
+    orderBy: { created_at: 'asc' },
+  });
 
   if (!vendor) {
     await whatsappService.sendTextMessage(
@@ -181,26 +182,26 @@ async function handleItemsState(from: string, text: string): Promise<void> {
     text === 'repeat_order'
   ) {
     if (session.lastOrderItems?.length) {
-      const items: MatchedItem[] = session.lastOrderItems.map((i) => ({
-        item: { quantity: i.quantity, name: i.productName, raw: i.productName },
-        product: {
-          id: i.productId,
-          name: i.productName,
-          price: i.unitPrice,
-          vendor_id: session.vendorId ?? '',
-          description: null,
-          image_url: null,
-          stock_level: 0,
-          low_stock_threshold: 5,
-          is_available: true,
-          is_special: false,
-          special_price: null,
-          aliases: [],
-          created_at: '',
-          updated_at: '',
-        },
-        quantity: i.quantity,
-      }));
+      const productIds = session.lastOrderItems.map((i) => i.productId);
+      const products = await prisma.product.findMany({
+        where: { id: { in: productIds } },
+      });
+      const productMap = new Map(products.map((p) => [p.id, p]));
+      const items: MatchedItem[] = session.lastOrderItems
+        .map((i) => {
+          const product = productMap.get(i.productId);
+          if (!product) return null;
+          return {
+            item: {
+              quantity: i.quantity,
+              name: i.productName,
+              raw: i.productName,
+            },
+            product,
+            quantity: i.quantity,
+          };
+        })
+        .filter((value): value is MatchedItem => value !== null);
       await sessionService.updateSession(from, {
         items,
         state: SESSION_STATES.AWAITING_CONFIRMATION,
@@ -373,13 +374,26 @@ async function handleConfirmationState(
   const normalised = text.toLowerCase().trim();
 
   if (['yes', 'confirm', 'ok', 'yebo', 'ee', 'ya'].includes(normalised)) {
-    const vendorResult = await db.query<VendorRow>(
-      'SELECT type, delivery_fee FROM vendors WHERE id = $1',
-      [session.vendorId]
-    );
-    const vendor = vendorResult.rows[0];
+    const vendor = await prisma.vendor.findUnique({
+      where: { id: session.vendorId ?? '' },
+      select: {
+        type: true,
+        delivery_fee: true,
+      },
+    });
 
-    if (vendor?.type === 'food') {
+    if (!vendor) {
+      await whatsappService.sendTextMessage(
+        from,
+        'Sorry, we could not find the vendor for this order. Please start again.'
+      );
+      await sessionService.resetSession(from);
+      return;
+    }
+
+    const deliveryFeeValue = decimalToNumber(vendor.delivery_fee ?? 0);
+
+    if (vendor.type === 'food') {
       await sessionService.transitionSession(
         from,
         SESSION_STATES.AWAITING_FULFILMENT_TYPE
@@ -387,8 +401,8 @@ async function handleConfirmationState(
       await whatsappService.sendButtonMessage(
         from,
         `Great! Would you like to *collect* your order or have it *delivered*?${
-          Number(vendor.delivery_fee) > 0
-            ? `\n\n🚗 Delivery fee: R${parseFloat(String(vendor.delivery_fee)).toFixed(2)}`
+          deliveryFeeValue > 0
+            ? "\n\n🚗 Delivery fee: R" + deliveryFeeValue.toFixed(2)
             : ''
         }`,
         [
@@ -416,7 +430,6 @@ async function handleConfirmationState(
     );
   }
 }
-
 /**
  * AWAITING_FULFILMENT_TYPE state.
  * Food vendor — collect vs delivery.
@@ -481,15 +494,28 @@ async function placeOrder(
   const session = await sessionService.getSession(from);
   if (!session) return;
 
-  const vendorResult = await db.query<VendorRow>(
-    'SELECT id, name, type, delivery_fee FROM vendors WHERE id = $1',
-    [session.vendorId]
-  );
-  const vendor = vendorResult.rows[0];
+  const vendor = await prisma.vendor.findUnique({
+    where: { id: session.vendorId ?? '' },
+    select: {
+      id: true,
+      name: true,
+      type: true,
+      delivery_fee: true,
+    },
+  });
+
+  if (!vendor) {
+    await whatsappService.sendTextMessage(
+      from,
+      'Sorry, the vendor is currently unavailable. Please try again later.'
+    );
+    await sessionService.resetSession(from);
+    return;
+  }
 
   const deliveryFee =
     fulfilmentType === 'delivery'
-      ? parseFloat(String(vendor.delivery_fee ?? 0))
+      ? decimalToNumber(vendor.delivery_fee ?? 0)
       : 0;
   const { subtotal, total } = buildOrderSummary(session.items, deliveryFee);
 

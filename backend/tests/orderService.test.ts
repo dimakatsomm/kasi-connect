@@ -5,10 +5,18 @@ import {
   getCustomerByPhone,
 } from '../src/services/orderService';
 
-// Mock database
+// Mock database (Prisma client)
 jest.mock('../src/db', () => ({
-  query: jest.fn(),
-  getClient: jest.fn(),
+  __esModule: true,
+  default: {
+    order: {
+      count: jest.fn(),
+    },
+    customer: {
+      upsert: jest.fn(),
+      findUnique: jest.fn(),
+    },
+  },
 }));
 
 // Mock Kafka producer
@@ -16,7 +24,17 @@ jest.mock('../src/kafka/producer', () => ({
   publishEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
-import * as db from '../src/db';
+import prisma from '../src/db';
+type PrismaMock = {
+  order: {
+    count: jest.Mock;
+  };
+  customer: {
+    upsert: jest.Mock;
+    findUnique: jest.Mock;
+  };
+};
+const mockedPrisma = prisma as unknown as PrismaMock;
 
 describe('Order Service — estimateReadyTime', () => {
   test('returns a future Date', () => {
@@ -28,8 +46,8 @@ describe('Order Service — estimateReadyTime', () => {
   test('position 1 gives minimum time (15 min)', () => {
     const result = estimateReadyTime(1);
     const diffMs = result.getTime() - Date.now();
-    expect(diffMs).toBeGreaterThanOrEqual(14 * 60 * 1000); // at least 14 min
-    expect(diffMs).toBeLessThanOrEqual(16 * 60 * 1000); // at most 16 min
+    expect(diffMs).toBeGreaterThanOrEqual(14 * 60 * 1000);
+    expect(diffMs).toBeLessThanOrEqual(16 * 60 * 1000);
   });
 
   test('higher queue position gives later time', () => {
@@ -42,23 +60,19 @@ describe('Order Service — estimateReadyTime', () => {
     const time1 = estimateReadyTime(1);
     const time2 = estimateReadyTime(2);
     const diff = time2.getTime() - time1.getTime();
-    expect(diff).toBeCloseTo(5 * 60 * 1000, -3); // within 1 second
+    expect(diff).toBeCloseTo(5 * 60 * 1000, -3);
   });
 });
 
 describe('Order Service — getNextQueuePosition', () => {
   test('returns count + 1', async () => {
-    (db.query as jest.Mock).mockResolvedValueOnce({
-      rows: [{ count: '3' }],
-    });
+    mockedPrisma.order.count.mockResolvedValueOnce(3);
     const pos = await getNextQueuePosition('vendor1');
     expect(pos).toBe(4);
   });
 
   test('returns 1 when queue is empty', async () => {
-    (db.query as jest.Mock).mockResolvedValueOnce({
-      rows: [{ count: '0' }],
-    });
+    mockedPrisma.order.count.mockResolvedValueOnce(0);
     const pos = await getNextQueuePosition('vendor1');
     expect(pos).toBe(1);
   });
@@ -74,7 +88,9 @@ describe('Order Service — upsertCustomer', () => {
       updated_at: new Date().toISOString(),
       last_order_id: null,
     };
-    (db.query as jest.Mock).mockResolvedValueOnce({ rows: [mockCustomer] });
+    mockedPrisma.customer.upsert.mockResolvedValueOnce(
+      mockCustomer as never
+    );
 
     const customer = await upsertCustomer('+27821234567');
     expect(customer.phone).toBe('+27821234567');
@@ -91,14 +107,16 @@ describe('Order Service — getCustomerByPhone', () => {
       created_at: '',
       updated_at: '',
     };
-    (db.query as jest.Mock).mockResolvedValueOnce({ rows: [mockCustomer] });
+    mockedPrisma.customer.findUnique.mockResolvedValueOnce(
+      mockCustomer as never
+    );
 
     const customer = await getCustomerByPhone('+27821234567');
     expect(customer).toEqual(mockCustomer);
   });
 
   test('returns null when not found', async () => {
-    (db.query as jest.Mock).mockResolvedValueOnce({ rows: [] });
+    mockedPrisma.customer.findUnique.mockResolvedValueOnce(null);
 
     const customer = await getCustomerByPhone('+27821999999');
     expect(customer).toBeNull();

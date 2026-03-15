@@ -150,7 +150,9 @@ docker-compose up postgres redis kafka -d
 
 ```bash
 # After postgres is healthy:
-psql -h localhost -U kasiconnect -d kasiconnect -f backend/src/db/migrations/001_initial_schema.sql
+cd backend
+npm install
+npm run prisma:migrate:deploy
 ```
 
 ### 4. Start the backend
@@ -274,6 +276,7 @@ Key variables:
 | `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp business phone number ID |
 | `REDIS_HOST` / `REDIS_PORT` | Redis connection |
 | `DB_HOST` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | PostgreSQL |
+| `DATABASE_URL` | Prisma/PostgreSQL connection string (postgresql://...) |
 | `KAFKA_BROKERS` | Comma-separated broker list |
 
 ---

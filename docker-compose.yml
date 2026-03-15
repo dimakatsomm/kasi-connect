@@ -12,7 +12,7 @@ services:
       POSTGRES_PASSWORD: kasiconnect_dev
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/src/db/migrations:/docker-entrypoint-initdb.d
+      - ./backend/prisma/migrations:/docker-entrypoint-initdb.d
     ports:
       - '5432:5432'
     healthcheck:
@@ -86,6 +86,7 @@ services:
       DB_NAME: kasiconnect
       DB_USER: kasiconnect
       DB_PASSWORD: kasiconnect_dev
+      DATABASE_URL: postgresql://kasiconnect:kasiconnect_dev@postgres:5432/kasiconnect?schema=public
       REDIS_HOST: redis
       REDIS_PORT: 6379
       KAFKA_BROKERS: kafka:29092

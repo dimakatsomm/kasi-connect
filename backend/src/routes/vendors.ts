@@ -1,8 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
-import * as db from '../db';
+import { Prisma } from '@prisma/client';
+import prisma from '../db';
 import logger from '../config/logger';
-import type { VendorRow } from '../types';
+import type { VendorRow, VendorType } from '../types';
 
 const router = Router();
 
@@ -12,11 +13,22 @@ const router = Router();
  */
 router.get('/', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const result = await db.query<VendorRow>(
-      `SELECT id, name, type, phone, address, whatsapp_number, delivery_fee, is_active, created_at
-       FROM vendors WHERE is_active = TRUE ORDER BY name`
-    );
-    res.json({ vendors: result.rows });
+    const vendors = await prisma.vendor.findMany({
+      where: { is_active: true },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        phone: true,
+        address: true,
+        whatsapp_number: true,
+        delivery_fee: true,
+        is_active: true,
+        created_at: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+    res.json({ vendors });
   } catch (err) {
     logger.error('Failed to list vendors', {
       error: err instanceof Error ? err.message : String(err),
@@ -39,15 +51,14 @@ router.get(
     }
 
     try {
-      const result = await db.query<VendorRow>(
-        'SELECT * FROM vendors WHERE id = $1',
-        [req.params.id]
-      );
-      if (!result.rows[0]) {
+      const vendor = await prisma.vendor.findUnique({
+        where: { id: req.params.id },
+      });
+      if (!vendor) {
         res.status(404).json({ error: 'Vendor not found' });
         return;
       }
-      res.json({ vendor: result.rows[0] });
+      res.json({ vendor });
     } catch (err) {
       logger.error('Failed to get vendor', {
         error: err instanceof Error ? err.message : String(err),
@@ -77,31 +88,45 @@ router.post(
       return;
     }
 
-    const { name, type, phone, address, whatsappNumber, deliveryFee = 0 } =
-      req.body as {
-        name: string;
-        type: string;
-        phone: string;
-        address?: string;
-        whatsappNumber?: string;
-        deliveryFee?: number;
-      };
+    const {
+      name,
+      type,
+      phone,
+      address,
+      whatsappNumber,
+      deliveryFee = 0,
+    } = req.body as {
+      name: string;
+      type: VendorType;
+      phone: string;
+      address?: string;
+      whatsappNumber?: string;
+      deliveryFee?: number;
+    };
 
     try {
-      const result = await db.query<VendorRow>(
-        `INSERT INTO vendors (name, type, phone, address, whatsapp_number, delivery_fee)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING *`,
-        [name, type, phone, address, whatsappNumber, deliveryFee]
-      );
-      res.status(201).json({ vendor: result.rows[0] });
+      const vendor = await prisma.vendor.create({
+        data: {
+          name,
+          type,
+          phone,
+          address,
+          whatsapp_number: whatsappNumber,
+          delivery_fee: deliveryFee ?? 0,
+        },
+      });
+      res.status(201).json({ vendor });
     } catch (err) {
-      const pgErr = err as { code?: string; message: string };
-      if (pgErr.code === '23505') {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
         res.status(409).json({ error: 'Phone number already registered' });
         return;
       }
-      logger.error('Failed to create vendor', { error: pgErr.message });
+      logger.error('Failed to create vendor', {
+        error: err instanceof Error ? err.message : String(err),
+      });
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -120,42 +145,50 @@ router.patch(
       return;
     }
 
-    const allowed = [
-      'name',
-      'address',
-      'whatsapp_number',
-      'delivery_fee',
-      'is_active',
-    ];
-    const updates: string[] = [];
-    const values: unknown[] = [req.params.id];
     const bodyData = req.body as Record<string, unknown>;
+    const toCamel = (value: string): string =>
+      value.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+    const readField = (field: string): unknown =>
+      bodyData[toCamel(field)] ?? bodyData[field];
 
-    for (const field of allowed) {
-      const camelKey = field.replace(/_([a-z])/g, (_, c: string) =>
-        c.toUpperCase()
-      );
-      if (bodyData[camelKey] !== undefined || bodyData[field] !== undefined) {
-        values.push(bodyData[camelKey] ?? bodyData[field]);
-        updates.push(`${field} = $${values.length}`);
-      }
+    const data: Prisma.VendorUpdateInput = {};
+
+    const nameValue = readField('name');
+    if (typeof nameValue === 'string') {
+      data.name = nameValue;
     }
 
-    if (updates.length === 0) {
+    const addressValue = readField('address');
+    if (addressValue !== undefined) {
+      data.address = addressValue as string;
+    }
+
+    const whatsappValue = readField('whatsapp_number');
+    if (whatsappValue !== undefined) {
+      data.whatsapp_number = whatsappValue as string;
+    }
+
+    const deliveryFeeValue = readField('delivery_fee');
+    if (deliveryFeeValue !== undefined) {
+      data.delivery_fee = deliveryFeeValue as number;
+    }
+
+    const isActiveValue = readField('is_active');
+    if (typeof isActiveValue === 'boolean') {
+      data.is_active = isActiveValue;
+    }
+
+    if (Object.keys(data).length === 0) {
       res.status(400).json({ error: 'No fields to update' });
       return;
     }
 
     try {
-      const result = await db.query<VendorRow>(
-        `UPDATE vendors SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $1 RETURNING *`,
-        values
-      );
-      if (!result.rows[0]) {
-        res.status(404).json({ error: 'Vendor not found' });
-        return;
-      }
-      res.json({ vendor: result.rows[0] });
+      const vendor = await prisma.vendor.update({
+        where: { id: req.params.id },
+        data,
+      });
+      res.json({ vendor });
     } catch (err) {
       logger.error('Failed to update vendor', {
         error: err instanceof Error ? err.message : String(err),

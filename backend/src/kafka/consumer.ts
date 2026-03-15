@@ -2,7 +2,7 @@ import { Kafka, Consumer, logLevel } from 'kafkajs';
 import config from '../config';
 import logger from '../config/logger';
 import * as whatsappService from '../services/whatsappService';
-import * as db from '../db';
+import prisma from '../db';
 
 let consumer: Consumer | undefined;
 
@@ -60,16 +60,19 @@ async function handleOrderReady({
   customerId: string;
 }): Promise<void> {
   try {
-    const result = await db.query<{ phone: string; fulfilment_type: string }>(
-      `SELECT o.fulfilment_type, c.phone
-       FROM orders o
-       JOIN customers c ON c.id = o.customer_id
-       WHERE o.id = $1`,
-      [orderId]
-    );
-    if (!result.rows[0]) return;
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        fulfilment_type: true,
+        customer: {
+          select: { phone: true },
+        },
+      },
+    });
+    if (!order?.customer?.phone) return;
 
-    const { phone, fulfilment_type: fulfilmentType } = result.rows[0];
+    const { phone } = order.customer;
+    const fulfilmentType = order.fulfilment_type;
     const collectMsg =
       fulfilmentType === 'delivery'
         ? 'Your order is ready and will be delivered shortly! 🛵'
@@ -99,16 +102,20 @@ async function handleSpecialsBroadcast({
   vendorId: string;
 }): Promise<void> {
   try {
-    const result = await db.query<{ phone: string }>(
-      `SELECT DISTINCT c.phone
-       FROM customers c
-       JOIN orders o ON o.customer_id = c.id
-       WHERE o.vendor_id = $1
-         AND o.created_at >= NOW() - INTERVAL '30 days'`,
-      [vendorId]
-    );
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const customers = await prisma.customer.findMany({
+      where: {
+        orders: {
+          some: {
+            vendor_id: vendorId,
+            created_at: { gte: thirtyDaysAgo },
+          },
+        },
+      },
+      select: { phone: true },
+    });
 
-    for (const { phone } of result.rows) {
+    for (const { phone } of customers) {
       await whatsappService
         .sendTextMessage(phone, `🌟 *Daily Special!*\n\n${message}`)
         .catch((err: Error) =>
@@ -121,7 +128,7 @@ async function handleSpecialsBroadcast({
 
     logger.info('Specials broadcast sent', {
       vendorId,
-      count: result.rows.length,
+      count: customers.length,
     });
   } catch (err) {
     logger.error('Failed to broadcast special', {
@@ -130,7 +137,6 @@ async function handleSpecialsBroadcast({
     });
   }
 }
-
 export async function stopConsumer(): Promise<void> {
   if (consumer) {
     await consumer.disconnect();
