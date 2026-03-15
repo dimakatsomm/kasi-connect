@@ -317,14 +317,12 @@ router.post(
         });
       });
 
-      publishEvent(config.kafka.topics.specialsBroadcast, {
+      await publishEvent(config.kafka.topics.specialsBroadcast, {
         vendorId,
         productId,
         message,
         specialId: special.id,
-      }).catch((err: Error) =>
-        logger.error('Failed to broadcast daily special event', { error: err.message })
-      );
+      });
 
       res.status(201).json({ special });
     } catch (err) {
