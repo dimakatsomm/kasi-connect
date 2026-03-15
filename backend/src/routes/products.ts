@@ -89,6 +89,12 @@ router.post(
         : aliases.split(',').map((a) => a.trim())
       : [];
 
+    const priceNum = parseFloat(String(price));
+    if (!Number.isFinite(priceNum) || priceNum < 0) {
+      res.status(400).json({ error: 'price must be a valid non-negative number' });
+      return;
+    }
+
     const stockLevelInt = parseInt(String(stockLevel ?? 0), 10);
     const lowStockThresholdInt = parseInt(String(lowStockThreshold ?? 5), 10);
 
@@ -98,7 +104,7 @@ router.post(
           vendor_id: vendorId,
           name,
           description,
-          price,
+          price: priceNum,
           image_url: imageUrl,
           stock_level: Number.isFinite(stockLevelInt) ? stockLevelInt : 0,
           low_stock_threshold: Number.isFinite(lowStockThresholdInt) ? lowStockThresholdInt : 5,
@@ -141,9 +147,9 @@ router.patch(
 
     const maybeAssign = <K extends keyof Prisma.ProductUpdateInput>(
       field: K
-    ): void => {
+    ): string | null => {
       const value = readField(field as string);
-      if (value === undefined) return;
+      if (value === undefined) return null;
 
       if (field === 'aliases') {
         data.aliases = Array.isArray(value)
@@ -151,35 +157,57 @@ router.patch(
           : String(value)
               .split(',')
               .map((a) => a.trim());
-        return;
+        return null;
       }
 
       if (field === 'stock_level' || field === 'low_stock_threshold') {
-        const n = parseInt(String(value), 10);
-        if (Number.isFinite(n)) {
-          data[field] = n as Prisma.ProductUpdateInput[K];
+        const str = String(value).trim();
+        if (!/^\d+$/.test(str)) {
+          return `${String(field)} must be a non-negative integer`;
         }
-        return;
+        data[field] = parseInt(str, 10) as Prisma.ProductUpdateInput[K];
+        return null;
       }
 
       if (field === 'is_available' || field === 'is_special') {
-        const strVal = String(value).toLowerCase();
+        const strVal = String(value).toLowerCase().trim();
+        if (!['true', 'false', '1', '0'].includes(strVal)) {
+          return `${String(field)} must be true, false, 1, or 0`;
+        }
         data[field] = (strVal === 'true' || strVal === '1') as Prisma.ProductUpdateInput[K];
-        return;
+        return null;
+      }
+
+      if (field === 'price' || field === 'special_price') {
+        const str = String(value).trim();
+        const num = Number(str);
+        if (str === '' || !Number.isFinite(num) || num < 0) {
+          return `${String(field)} must be a valid non-negative number`;
+        }
+        data[field] = num as Prisma.ProductUpdateInput[K];
+        return null;
       }
 
       data[field] = value as Prisma.ProductUpdateInput[K];
+      return null;
     };
 
-    maybeAssign('name');
-    maybeAssign('description');
-    maybeAssign('price');
-    maybeAssign('stock_level');
-    maybeAssign('low_stock_threshold');
-    maybeAssign('is_available');
-    maybeAssign('is_special');
-    maybeAssign('special_price');
-    maybeAssign('aliases');
+    const fieldErrors: string[] = [
+      maybeAssign('name'),
+      maybeAssign('description'),
+      maybeAssign('price'),
+      maybeAssign('stock_level'),
+      maybeAssign('low_stock_threshold'),
+      maybeAssign('is_available'),
+      maybeAssign('is_special'),
+      maybeAssign('special_price'),
+      maybeAssign('aliases'),
+    ].filter((e): e is string => e !== null);
+
+    if (fieldErrors.length > 0) {
+      res.status(400).json({ errors: fieldErrors });
+      return;
+    }
 
     if (req.file) {
       data.image_url = `/uploads/${req.file.originalname}`;
@@ -209,6 +237,10 @@ router.patch(
 
       res.json({ product });
     } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+        res.status(404).json({ error: 'Product not found' });
+        return;
+      }
       logger.error('Failed to update product', {
         error: err instanceof Error ? err.message : String(err),
       });
@@ -237,6 +269,10 @@ router.delete(
       });
       res.status(204).send();
     } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+        res.status(404).json({ error: 'Product not found' });
+        return;
+      }
       logger.error('Failed to delete product', {
         error: err instanceof Error ? err.message : String(err),
       });
@@ -272,7 +308,7 @@ router.post(
     try {
       const special = await prisma.$transaction(async (tx) => {
         await tx.product.update({
-          where: { id: productId },
+          where: { id: productId, vendor_id: vendorId },
           data: { is_special: true },
         });
 
@@ -290,6 +326,10 @@ router.post(
 
       res.status(201).json({ special });
     } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+        res.status(404).json({ error: 'Product not found' });
+        return;
+      }
       logger.error('Failed to publish daily special', {
         error: err instanceof Error ? err.message : String(err),
       });

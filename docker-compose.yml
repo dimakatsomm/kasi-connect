@@ -85,7 +85,7 @@ services:
       DB_NAME: kasiconnect
       DB_USER: kasiconnect
       DB_PASSWORD: kasiconnect_dev
-      DATABASE_URL: ${DATABASE_URL:-postgresql://kasiconnect:kasiconnect_dev@postgres:5432/kasiconnect?schema=public}
+      DATABASE_URL: ${DATABASE_URL}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       KAFKA_BROKERS: kafka:29092

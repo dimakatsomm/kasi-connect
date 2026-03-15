@@ -19,16 +19,17 @@ ENV NODE_ENV=production
 
 # Only install production deps in the final image
 COPY package*.json ./
-RUN npm ci --only=production
+# Copy schema so @prisma/client postinstall can locate it if needed
+COPY --from=builder /app/prisma ./prisma
+RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
-# Copy Prisma schema + migrations so `prisma migrate deploy` can run at startup
-COPY --from=builder /app/prisma ./prisma
 # Copy Prisma CLI from builder so we can run migrations without it being a prod dep
 COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 # Copy generated Prisma client artifacts required by @prisma/client at runtime
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
 
 # Non-root user for security
 RUN addgroup -g 1001 -S nodejs && adduser -S kasiapp -u 1001

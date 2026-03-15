@@ -184,7 +184,7 @@ async function handleItemsState(from: string, text: string): Promise<void> {
     if (session.lastOrderItems?.length) {
       const productIds = session.lastOrderItems.map((i) => i.productId);
       const products = await prisma.product.findMany({
-        where: { id: { in: productIds } },
+        where: { id: { in: productIds }, is_available: true },
       });
       const productMap = new Map(products.map((p) => [p.id, p]));
       const items: MatchedItem[] = session.lastOrderItems
