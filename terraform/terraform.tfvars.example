@@ -1,0 +1,29 @@
+# Huawei Cloud account + region
+region       = "af-south-1"
+project_id   = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+project_name = "kasi-connect"
+environment  = "staging"
+availability_zones = ["af-south-1a", "af-south-1b"]
+
+# Networking
+trusted_cidrs      = ["203.0.113.0/24"]
+http_ingress_cidrs = ["0.0.0.0/0"]
+ssh_public_key     = "ssh-ed25519 AAAA... kasiconnect@workstation"
+
+# Cluster + workloads
+enable_public_api = true
+cce_node_count    = 3
+
+# Data plane credentials (override defaults instead of using generated secrets)
+rds_password         = "S3cure#Postgres"
+dcs_password         = "Str0ng#Redis"
+dms_manager_password = "Sup3r#Kafka"
+
+# Storage overrides
+obs_bucket_name         = "kasi-connect-assets-staging"
+obs_enable_static_website = true
+
+additional_tags = {
+  Owner      = "platform-team"
+  CostCenter = "kasi-ml"
+}

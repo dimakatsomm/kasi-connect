@@ -1,0 +1,121 @@
+name: Terraform - Huawei Cloud
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+permissions:
+  contents: read
+
+jobs:
+  staging:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/develop') || (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging')
+    runs-on: ubuntu-latest
+    environment: staging
+    defaults:
+      run:
+        working-directory: terraform
+    env:
+      TF_IN_AUTOMATION: true
+      TF_VAR_environment: staging
+      HUAWEICLOUD_ACCESS_KEY: ${{ secrets.HUAWEICLOUD_ACCESS_KEY }}
+      HUAWEICLOUD_SECRET_KEY: ${{ secrets.HUAWEICLOUD_SECRET_KEY }}
+      TF_VAR_region: ${{ secrets.HUAWEICLOUD_REGION }}
+      TF_VAR_project_id: ${{ secrets.HUAWEICLOUD_PROJECT_ID }}
+      TF_VAR_ssh_public_key: ${{ secrets.HUAWEICLOUD_SSH_PUBLIC_KEY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure Huawei Cloud staging secrets exist
+        shell: bash
+        run: |
+          : "${HUAWEICLOUD_ACCESS_KEY:?Set staging secret HUAWEICLOUD_ACCESS_KEY}"
+          : "${HUAWEICLOUD_SECRET_KEY:?Set staging secret HUAWEICLOUD_SECRET_KEY}"
+          : "${TF_VAR_ssh_public_key:?Set staging secret HUAWEICLOUD_SSH_PUBLIC_KEY}"
+          : "${TF_VAR_region:?Add staging secret HUAWEICLOUD_REGION (region code)}"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+          terraform_wrapper: false
+
+      - name: Terraform fmt
+        shell: bash
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        shell: bash
+        run: terraform init -backend=false
+
+      - name: Terraform validate
+        shell: bash
+        run: terraform validate -no-color
+
+      - name: Terraform plan
+        shell: bash
+        run: terraform plan -input=false -no-color
+
+  production:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.environment == 'production')
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: terraform
+    env:
+      TF_IN_AUTOMATION: true
+      TF_VAR_environment: prod
+      HUAWEICLOUD_ACCESS_KEY: ${{ secrets.HUAWEICLOUD_ACCESS_KEY }}
+      HUAWEICLOUD_SECRET_KEY: ${{ secrets.HUAWEICLOUD_SECRET_KEY }}
+      TF_VAR_region: ${{ secrets.HUAWEICLOUD_REGION }}
+      TF_VAR_project_id: ${{ secrets.HUAWEICLOUD_PROJECT_ID }}
+      TF_VAR_ssh_public_key: ${{ secrets.HUAWEICLOUD_SSH_PUBLIC_KEY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure Huawei Cloud production secrets exist
+        shell: bash
+        run: |
+          : "${HUAWEICLOUD_ACCESS_KEY:?Set production secret HUAWEICLOUD_ACCESS_KEY}"
+          : "${HUAWEICLOUD_SECRET_KEY:?Set production secret HUAWEICLOUD_SECRET_KEY}"
+          : "${TF_VAR_ssh_public_key:?Set production secret HUAWEICLOUD_SSH_PUBLIC_KEY}"
+          : "${TF_VAR_region:?Add production secret HUAWEICLOUD_REGION (region code)}"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+          terraform_wrapper: false
+
+      - name: Terraform fmt
+        shell: bash
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        shell: bash
+        run: terraform init -backend=false
+
+      - name: Terraform validate
+        shell: bash
+        run: terraform validate -no-color
+
+      - name: Terraform plan
+        shell: bash
+        run: terraform plan -input=false -no-color
