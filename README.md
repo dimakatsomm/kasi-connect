@@ -150,9 +150,7 @@ docker-compose up postgres redis kafka -d
 
 ```bash
 # After postgres is healthy:
-cd backend
-npm install
-npm run prisma:migrate:deploy
+(cd backend && npm install && npm run prisma:migrate:deploy)
 ```
 
 ### 4. Start the backend

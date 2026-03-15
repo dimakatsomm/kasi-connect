@@ -8,7 +8,7 @@ import { transcribeVoiceNote } from '../services/voiceService';
 import { decimalToNumber } from '../utils/prisma';
 import logger from '../config/logger';
 import { SESSION_STATES } from '../services/sessionStates';
-import type { WhatsAppMessage, MatchedItem, LastOrderItem, VendorRow } from '../types';
+import type { WhatsAppMessage, MatchedItem, LastOrderItem } from '../types';
 
 // ── Greeting messages ─────────────────────────────────────────────────────────
 
@@ -533,10 +533,8 @@ async function placeOrder(
   });
 
   let queueMsg = '';
-  if (vendor.type === 'food') {
-    const queuePos = await orderService.getNextQueuePosition(
-      session.vendorId ?? ''
-    );
+  if (vendor.type === 'food' && order.queue_position != null) {
+    const queuePos = order.queue_position;
     const readyTime = orderService.estimateReadyTime(queuePos);
     const readyTimeStr = readyTime.toLocaleTimeString('en-ZA', {
       hour: '2-digit',
@@ -545,7 +543,6 @@ async function placeOrder(
     });
 
     await orderService.updateOrderStatus(order.id, 'confirmed', {
-      queuePosition: queuePos,
       estimatedReadyTime: readyTime,
     });
 
