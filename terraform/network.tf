@@ -77,9 +77,6 @@ resource "huaweicloud_networking_secgroup_rule" "internal_full" {
   security_group_id = huaweicloud_networking_secgroup.platform.id
   direction         = "ingress"
   ethertype         = "IPv4"
-  protocol          = "tcp"
-  port_range_min    = 0
-  port_range_max    = 65535
   remote_ip_prefix  = var.vpc_cidr
 }
 
@@ -87,9 +84,6 @@ resource "huaweicloud_networking_secgroup_rule" "egress_all" {
   security_group_id = huaweicloud_networking_secgroup.platform.id
   direction         = "egress"
   ethertype         = "IPv4"
-  protocol          = "tcp"
-  port_range_min    = 0
-  port_range_max    = 65535
   remote_ip_prefix  = "0.0.0.0/0"
 }
 
