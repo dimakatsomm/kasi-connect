@@ -2,7 +2,7 @@ import { Kafka, Consumer, logLevel } from 'kafkajs';
 import config from '../config';
 import logger from '../config/logger';
 import * as whatsappService from '../services/whatsappService';
-import * as db from '../db';
+import { prisma } from '../db';
 
 let consumer: Consumer | undefined;
 
@@ -60,26 +60,30 @@ async function handleOrderReady({
   customerId: string;
 }): Promise<void> {
   try {
-    const result = await db.query<{ phone: string; fulfilment_type: string }>(
-      `SELECT o.fulfilment_type, c.phone
-       FROM orders o
-       JOIN customers c ON c.id = o.customer_id
-       WHERE o.id = $1`,
-      [orderId]
-    );
-    if (!result.rows[0]) return;
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        fulfilmentType: true,
+        customer: {
+          select: {
+            phone: true,
+          },
+        },
+      },
+    });
 
-    const { phone, fulfilment_type: fulfilmentType } = result.rows[0];
+    if (!order) return;
+
     const collectMsg =
-      fulfilmentType === 'delivery'
+      order.fulfilmentType === 'delivery'
         ? 'Your order is ready and will be delivered shortly! 🛵'
         : 'Your order is ready for collection! Come pick it up 🎉';
 
     await whatsappService.sendTextMessage(
-      phone,
+      order.customer.phone,
       `✅ *Order Ready!*\n\n${collectMsg}`
     );
-    logger.info('Order ready notification sent', { orderId, phone });
+    logger.info('Order ready notification sent', { orderId, phone: order.customer.phone });
   } catch (err) {
     logger.error('Failed to send order ready notification', {
       orderId,
@@ -99,16 +103,27 @@ async function handleSpecialsBroadcast({
   vendorId: string;
 }): Promise<void> {
   try {
-    const result = await db.query<{ phone: string }>(
-      `SELECT DISTINCT c.phone
-       FROM customers c
-       JOIN orders o ON o.customer_id = c.id
-       WHERE o.vendor_id = $1
-         AND o.created_at >= NOW() - INTERVAL '30 days'`,
-      [vendorId]
-    );
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    for (const { phone } of result.rows) {
+    const customers = await prisma.customer.findMany({
+      where: {
+        orders: {
+          some: {
+            vendorId,
+            createdAt: {
+              gte: thirtyDaysAgo,
+            },
+          },
+        },
+      },
+      select: {
+        phone: true,
+      },
+      distinct: ['phone'],
+    });
+
+    for (const { phone } of customers) {
       await whatsappService
         .sendTextMessage(phone, `🌟 *Daily Special!*\n\n${message}`)
         .catch((err: Error) =>
@@ -121,7 +136,7 @@ async function handleSpecialsBroadcast({
 
     logger.info('Specials broadcast sent', {
       vendorId,
-      count: result.rows.length,
+      count: customers.length,
     });
   } catch (err) {
     logger.error('Failed to broadcast special', {

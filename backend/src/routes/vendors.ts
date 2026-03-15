@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
-import * as db from '../db';
+import { prisma } from '../db';
 import logger from '../config/logger';
 import type { VendorRow } from '../types';
 
@@ -12,11 +12,36 @@ const router = Router();
  */
 router.get('/', async (_req: Request, res: Response): Promise<void> => {
   try {
-    const result = await db.query<VendorRow>(
-      `SELECT id, name, type, phone, address, whatsapp_number, delivery_fee, is_active, created_at
-       FROM vendors WHERE is_active = TRUE ORDER BY name`
-    );
-    res.json({ vendors: result.rows });
+    const vendors = await prisma.vendor.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        phone: true,
+        address: true,
+        whatsappNumber: true,
+        deliveryFee: true,
+        isActive: true,
+        createdAt: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    // Convert to snake_case format for backward compatibility
+    const vendorsResponse = vendors.map((v) => ({
+      id: v.id,
+      name: v.name,
+      type: v.type,
+      phone: v.phone,
+      address: v.address,
+      whatsapp_number: v.whatsappNumber,
+      delivery_fee: v.deliveryFee.toNumber(),
+      is_active: v.isActive,
+      created_at: v.createdAt.toISOString(),
+    }));
+
+    res.json({ vendors: vendorsResponse });
   } catch (err) {
     logger.error('Failed to list vendors', {
       error: err instanceof Error ? err.message : String(err),
@@ -39,15 +64,30 @@ router.get(
     }
 
     try {
-      const result = await db.query<VendorRow>(
-        'SELECT * FROM vendors WHERE id = $1',
-        [req.params.id]
-      );
-      if (!result.rows[0]) {
+      const vendor = await prisma.vendor.findUnique({
+        where: { id: req.params.id },
+      });
+
+      if (!vendor) {
         res.status(404).json({ error: 'Vendor not found' });
         return;
       }
-      res.json({ vendor: result.rows[0] });
+
+      // Convert to snake_case format for backward compatibility
+      const vendorResponse: VendorRow = {
+        id: vendor.id,
+        name: vendor.name,
+        type: vendor.type,
+        phone: vendor.phone,
+        address: vendor.address,
+        whatsapp_number: vendor.whatsappNumber,
+        delivery_fee: vendor.deliveryFee.toNumber(),
+        is_active: vendor.isActive,
+        created_at: vendor.createdAt.toISOString(),
+        updated_at: vendor.updatedAt.toISOString(),
+      };
+
+      res.json({ vendor: vendorResponse });
     } catch (err) {
       logger.error('Failed to get vendor', {
         error: err instanceof Error ? err.message : String(err),
@@ -88,16 +128,34 @@ router.post(
       };
 
     try {
-      const result = await db.query<VendorRow>(
-        `INSERT INTO vendors (name, type, phone, address, whatsapp_number, delivery_fee)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING *`,
-        [name, type, phone, address, whatsappNumber, deliveryFee]
-      );
-      res.status(201).json({ vendor: result.rows[0] });
+      const vendor = await prisma.vendor.create({
+        data: {
+          name,
+          type: type as 'retail' | 'food',
+          phone,
+          address,
+          whatsappNumber,
+          deliveryFee,
+        },
+      });
+
+      const vendorResponse: VendorRow = {
+        id: vendor.id,
+        name: vendor.name,
+        type: vendor.type,
+        phone: vendor.phone,
+        address: vendor.address,
+        whatsapp_number: vendor.whatsappNumber,
+        delivery_fee: vendor.deliveryFee.toNumber(),
+        is_active: vendor.isActive,
+        created_at: vendor.createdAt.toISOString(),
+        updated_at: vendor.updatedAt.toISOString(),
+      };
+
+      res.status(201).json({ vendor: vendorResponse });
     } catch (err) {
       const pgErr = err as { code?: string; message: string };
-      if (pgErr.code === '23505') {
+      if (pgErr.code === 'P2002') {
         res.status(409).json({ error: 'Phone number already registered' });
         return;
       }
@@ -123,43 +181,52 @@ router.patch(
     const allowed = [
       'name',
       'address',
-      'whatsapp_number',
-      'delivery_fee',
-      'is_active',
+      'whatsappNumber',
+      'deliveryFee',
+      'isActive',
     ];
-    const updates: string[] = [];
-    const values: unknown[] = [req.params.id];
+    const updates: Record<string, unknown> = {};
     const bodyData = req.body as Record<string, unknown>;
 
     for (const field of allowed) {
-      const camelKey = field.replace(/_([a-z])/g, (_, c: string) =>
-        c.toUpperCase()
-      );
-      if (bodyData[camelKey] !== undefined || bodyData[field] !== undefined) {
-        values.push(bodyData[camelKey] ?? bodyData[field]);
-        updates.push(`${field} = $${values.length}`);
+      const snakeKey = field.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+      if (bodyData[field] !== undefined || bodyData[snakeKey] !== undefined) {
+        updates[field] = bodyData[field] ?? bodyData[snakeKey];
       }
     }
 
-    if (updates.length === 0) {
+    if (Object.keys(updates).length === 0) {
       res.status(400).json({ error: 'No fields to update' });
       return;
     }
 
     try {
-      const result = await db.query<VendorRow>(
-        `UPDATE vendors SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $1 RETURNING *`,
-        values
-      );
-      if (!result.rows[0]) {
+      const vendor = await prisma.vendor.update({
+        where: { id: req.params.id },
+        data: updates,
+      });
+
+      const vendorResponse: VendorRow = {
+        id: vendor.id,
+        name: vendor.name,
+        type: vendor.type,
+        phone: vendor.phone,
+        address: vendor.address,
+        whatsapp_number: vendor.whatsappNumber,
+        delivery_fee: vendor.deliveryFee.toNumber(),
+        is_active: vendor.isActive,
+        created_at: vendor.createdAt.toISOString(),
+        updated_at: vendor.updatedAt.toISOString(),
+      };
+
+      res.json({ vendor: vendorResponse });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('Record to update not found')) {
         res.status(404).json({ error: 'Vendor not found' });
         return;
       }
-      res.json({ vendor: result.rows[0] });
-    } catch (err) {
-      logger.error('Failed to update vendor', {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      logger.error('Failed to update vendor', { error: message });
       res.status(500).json({ error: 'Internal server error' });
     }
   }

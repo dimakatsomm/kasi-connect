@@ -1,5 +1,5 @@
 import Fuse, { IFuseOptions } from 'fuse.js';
-import * as db from '../db';
+import { prisma } from '../db';
 import logger from '../config/logger';
 import type {
   ProductRow,
@@ -32,17 +32,33 @@ const FUSE_OPTIONS: IFuseOptions<ProductRow> = {
 export async function getVendorProducts(
   vendorId: string
 ): Promise<ProductRow[]> {
-  const result = await db.query<ProductRow>(
-    `SELECT id, vendor_id, name, price, description,
-            image_url, stock_level, low_stock_threshold,
-            is_available, is_special, special_price,
-            aliases, created_at, updated_at
-     FROM products
-     WHERE vendor_id = $1 AND is_available = TRUE
-     ORDER BY name`,
-    [vendorId]
-  );
-  return result.rows;
+  const products = await prisma.product.findMany({
+    where: {
+      vendorId,
+      isAvailable: true,
+    },
+    orderBy: {
+      name: 'asc',
+    },
+  });
+
+  // Convert Prisma models to ProductRow format (snake_case)
+  return products.map((p) => ({
+    id: p.id,
+    vendor_id: p.vendorId,
+    name: p.name,
+    price: p.price.toNumber(),
+    description: p.description,
+    image_url: p.imageUrl,
+    stock_level: p.stockLevel,
+    low_stock_threshold: p.lowStockThreshold,
+    is_available: p.isAvailable,
+    is_special: p.isSpecial,
+    special_price: p.specialPrice?.toNumber() ?? null,
+    aliases: p.aliases,
+    created_at: p.createdAt.toISOString(),
+    updated_at: p.updatedAt.toISOString(),
+  }));
 }
 
 /**

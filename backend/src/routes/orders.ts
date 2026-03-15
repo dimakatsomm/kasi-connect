@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
-import * as db from '../db';
+import { prisma } from '../db';
 import * as orderService from '../services/orderService';
 import logger from '../config/logger';
 import type { OrderRow } from '../types';
@@ -50,34 +50,71 @@ router.get(
     }
 
     try {
-      const result = await db.query<OrderRow>(
-        `SELECT o.*,
-                c.phone AS customer_phone,
-                c.name  AS customer_name,
-                json_agg(
-                  json_build_object(
-                    'productId', oi.product_id,
-                    'productName', p.name,
-                    'quantity', oi.quantity,
-                    'unitPrice', oi.unit_price,
-                    'totalPrice', oi.total_price
-                  ) ORDER BY p.name
-                ) AS items
-         FROM orders o
-         JOIN customers c ON c.id = o.customer_id
-         JOIN order_items oi ON oi.order_id = o.id
-         JOIN products p ON p.id = oi.product_id
-         WHERE o.id = $1
-         GROUP BY o.id, c.phone, c.name`,
-        [req.params.id]
-      );
+      const order = await prisma.order.findUnique({
+        where: { id: req.params.id },
+        include: {
+          customer: {
+            select: {
+              phone: true,
+              name: true,
+            },
+          },
+          orderItems: {
+            include: {
+              product: {
+                select: {
+                  name: true,
+                },
+              },
+            },
+            orderBy: {
+              product: {
+                name: 'asc',
+              },
+            },
+          },
+        },
+      });
 
-      if (!result.rows[0]) {
+      if (!order) {
         res.status(404).json({ error: 'Order not found' });
         return;
       }
 
-      res.json({ order: result.rows[0] });
+      // Convert to expected format with snake_case and aggregated items
+      const items = order.orderItems.map((oi) => ({
+        productId: oi.productId,
+        productName: oi.product.name,
+        quantity: oi.quantity,
+        unitPrice: oi.unitPrice.toNumber(),
+        totalPrice: oi.totalPrice.toNumber(),
+      }));
+
+      const orderResponse: OrderRow & {
+        customer_phone: string;
+        customer_name: string | null;
+        items: unknown[];
+      } = {
+        id: order.id,
+        vendor_id: order.vendorId,
+        customer_id: order.customerId,
+        status: order.status,
+        fulfilment_type: order.fulfilmentType,
+        delivery_address: order.deliveryAddress,
+        delivery_fee: order.deliveryFee.toNumber(),
+        subtotal: order.subtotal.toNumber(),
+        total: order.total.toNumber(),
+        queue_position: order.queuePosition,
+        estimated_ready_time: order.estimatedReadyTime?.toISOString() ?? null,
+        notes: order.notes,
+        created_at: order.createdAt.toISOString(),
+        updated_at: order.updatedAt.toISOString(),
+        customer_phone: order.customer.phone,
+        customer_name: order.customer.name,
+        items,
+      };
+
+      res.json({ order: orderResponse });
     } catch (err) {
       logger.error('Failed to get order', {
         error: err instanceof Error ? err.message : String(err),

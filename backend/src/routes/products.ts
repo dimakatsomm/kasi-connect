@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { body, param, validationResult } from 'express-validator';
-import * as db from '../db';
+import { prisma } from '../db';
 import { publishEvent } from '../kafka/producer';
 import config from '../config';
 import logger from '../config/logger';
@@ -25,11 +25,30 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
   }
 
   try {
-    const result = await db.query<ProductRow>(
-      `SELECT * FROM products WHERE vendor_id = $1 ORDER BY name`,
-      [vendorId]
-    );
-    res.json({ products: result.rows });
+    const products = await prisma.product.findMany({
+      where: { vendorId },
+      orderBy: { name: 'asc' },
+    });
+
+    // Convert to snake_case format for backward compatibility
+    const productsResponse: ProductRow[] = products.map((p) => ({
+      id: p.id,
+      vendor_id: p.vendorId,
+      name: p.name,
+      description: p.description,
+      price: p.price.toNumber(),
+      image_url: p.imageUrl,
+      stock_level: p.stockLevel,
+      low_stock_threshold: p.lowStockThreshold,
+      is_available: p.isAvailable,
+      is_special: p.isSpecial,
+      special_price: p.specialPrice?.toNumber() ?? null,
+      aliases: p.aliases,
+      created_at: p.createdAt.toISOString(),
+      updated_at: p.updatedAt.toISOString(),
+    }));
+
+    res.json({ products: productsResponse });
   } catch (err) {
     logger.error('Failed to list products', {
       error: err instanceof Error ? err.message : String(err),
@@ -91,11 +110,8 @@ router.post(
       : [];
 
     try {
-      const result = await db.query<ProductRow>(
-        `INSERT INTO products (vendor_id, name, description, price, image_url, stock_level, low_stock_threshold, aliases)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         RETURNING *`,
-        [
+      const product = await prisma.product.create({
+        data: {
           vendorId,
           name,
           description,
@@ -103,10 +119,28 @@ router.post(
           imageUrl,
           stockLevel,
           lowStockThreshold,
-          aliasesArray,
-        ]
-      );
-      res.status(201).json({ product: result.rows[0] });
+          aliases: aliasesArray,
+        },
+      });
+
+      const productResponse: ProductRow = {
+        id: product.id,
+        vendor_id: product.vendorId,
+        name: product.name,
+        description: product.description,
+        price: product.price.toNumber(),
+        image_url: product.imageUrl,
+        stock_level: product.stockLevel,
+        low_stock_threshold: product.lowStockThreshold,
+        is_available: product.isAvailable,
+        is_special: product.isSpecial,
+        special_price: product.specialPrice?.toNumber() ?? null,
+        aliases: product.aliases,
+        created_at: product.createdAt.toISOString(),
+        updated_at: product.updatedAt.toISOString(),
+      };
+
+      res.status(201).json({ product: productResponse });
     } catch (err) {
       logger.error('Failed to create product', {
         error: err instanceof Error ? err.message : String(err),
@@ -135,76 +169,83 @@ router.patch(
       'name',
       'description',
       'price',
-      'stock_level',
-      'low_stock_threshold',
-      'is_available',
-      'is_special',
-      'special_price',
+      'stockLevel',
+      'lowStockThreshold',
+      'isAvailable',
+      'isSpecial',
+      'specialPrice',
       'aliases',
     ];
-    const updates: string[] = [];
-    const values: unknown[] = [req.params.id];
-
+    const updates: Record<string, unknown> = {};
     const bodyData = req.body as Record<string, unknown>;
 
     for (const field of allowed) {
-      const camelKey = field.replace(/_([a-z])/g, (_, c: string) =>
-        c.toUpperCase()
-      );
-      if (bodyData[camelKey] !== undefined || bodyData[field] !== undefined) {
-        const val = bodyData[camelKey] ?? bodyData[field];
-        values.push(
+      const snakeKey = field.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+      if (bodyData[field] !== undefined || bodyData[snakeKey] !== undefined) {
+        const val = bodyData[field] ?? bodyData[snakeKey];
+        updates[field] =
           field === 'aliases'
             ? Array.isArray(val)
               ? val
               : String(val)
                   .split(',')
                   .map((a) => a.trim())
-            : val
-        );
-        updates.push(`${field} = $${values.length}`);
+            : val;
       }
     }
 
     if (req.file) {
       const imageUrl = `/uploads/${req.file.originalname}`;
-      values.push(imageUrl);
-      updates.push(`image_url = $${values.length}`);
+      updates.imageUrl = imageUrl;
     }
 
-    if (updates.length === 0) {
+    if (Object.keys(updates).length === 0) {
       res.status(400).json({ error: 'No fields to update' });
       return;
     }
 
     try {
-      const result = await db.query<ProductRow>(
-        `UPDATE products SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $1 RETURNING *`,
-        values
-      );
+      const product = await prisma.product.update({
+        where: { id: req.params.id },
+        data: updates,
+      });
 
-      if (!result.rows[0]) {
-        res.status(404).json({ error: 'Product not found' });
-        return;
-      }
-
-      const product = result.rows[0];
       if (
-        product.stock_level !== null &&
-        product.stock_level <= product.low_stock_threshold
+        product.stockLevel !== null &&
+        product.stockLevel <= product.lowStockThreshold
       ) {
         logger.warn('Low stock alert', {
           productId: product.id,
           name: product.name,
-          stockLevel: product.stock_level,
+          stockLevel: product.stockLevel,
         });
       }
 
-      res.json({ product });
+      const productResponse: ProductRow = {
+        id: product.id,
+        vendor_id: product.vendorId,
+        name: product.name,
+        description: product.description,
+        price: product.price.toNumber(),
+        image_url: product.imageUrl,
+        stock_level: product.stockLevel,
+        low_stock_threshold: product.lowStockThreshold,
+        is_available: product.isAvailable,
+        is_special: product.isSpecial,
+        special_price: product.specialPrice?.toNumber() ?? null,
+        aliases: product.aliases,
+        created_at: product.createdAt.toISOString(),
+        updated_at: product.updatedAt.toISOString(),
+      };
+
+      res.json({ product: productResponse });
     } catch (err) {
-      logger.error('Failed to update product', {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('Record to update not found')) {
+        res.status(404).json({ error: 'Product not found' });
+        return;
+      }
+      logger.error('Failed to update product', { error: message });
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -224,10 +265,10 @@ router.delete(
     }
 
     try {
-      await db.query(
-        `UPDATE products SET is_available = FALSE WHERE id = $1`,
-        [req.params.id]
-      );
+      await prisma.product.update({
+        where: { id: req.params.id },
+        data: { isAvailable: false },
+      });
       res.status(204).send();
     } catch (err) {
       logger.error('Failed to delete product', {
@@ -263,24 +304,27 @@ router.post(
     };
 
     try {
-      await db.query(
-        `UPDATE products SET is_special = TRUE WHERE id = $1`,
-        [productId]
-      );
+      await prisma.product.update({
+        where: { id: productId },
+        data: { isSpecial: true },
+      });
 
-      const result = await db.query<{ id: string }>(
-        `INSERT INTO daily_specials (vendor_id, product_id, message) VALUES ($1, $2, $3) RETURNING *`,
-        [vendorId, productId, message]
-      );
+      const dailySpecial = await prisma.dailySpecial.create({
+        data: {
+          vendorId,
+          productId,
+          message,
+        },
+      });
 
       await publishEvent(config.kafka.topics.specialsBroadcast, {
         vendorId,
         productId,
         message,
-        specialId: result.rows[0].id,
+        specialId: dailySpecial.id,
       });
 
-      res.status(201).json({ special: result.rows[0] });
+      res.status(201).json({ special: { id: dailySpecial.id } });
     } catch (err) {
       logger.error('Failed to publish daily special', {
         error: err instanceof Error ? err.message : String(err),

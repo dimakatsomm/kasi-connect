@@ -1,4 +1,4 @@
-import * as db from '../db';
+import { prisma } from '../db';
 import logger from '../config/logger';
 import { publishEvent } from '../kafka/producer';
 import config from '../config';
@@ -8,6 +8,7 @@ import type {
   CreateOrderParams,
   UpdateOrderStatusExtra,
 } from '../types';
+import { Prisma } from '../generated/prisma';
 
 /**
  * Create or upsert a customer record.
@@ -18,14 +19,26 @@ export async function upsertCustomer(
   phone: string,
   name: string | null = null
 ): Promise<CustomerRow> {
-  const result = await db.query<CustomerRow>(
-    `INSERT INTO customers (phone, name)
-     VALUES ($1, $2)
-     ON CONFLICT (phone) DO UPDATE SET name = COALESCE($2, customers.name), updated_at = NOW()
-     RETURNING *`,
-    [phone, name]
-  );
-  return result.rows[0];
+  const customer = await prisma.customer.upsert({
+    where: { phone },
+    update: {
+      name: name ?? undefined,
+    },
+    create: {
+      phone,
+      name,
+    },
+  });
+
+  // Convert Prisma result to CustomerRow format
+  return {
+    id: customer.id,
+    phone: customer.phone,
+    name: customer.name,
+    last_order_id: customer.lastOrderId,
+    created_at: customer.createdAt.toISOString(),
+    updated_at: customer.updatedAt.toISOString(),
+  };
 }
 
 /**
@@ -35,11 +48,22 @@ export async function upsertCustomer(
 export async function getCustomerByPhone(
   phone: string
 ): Promise<CustomerRow | null> {
-  const result = await db.query<CustomerRow>(
-    'SELECT * FROM customers WHERE phone = $1',
-    [phone]
-  );
-  return result.rows[0] ?? null;
+  const customer = await prisma.customer.findUnique({
+    where: { phone },
+  });
+
+  if (!customer) {
+    return null;
+  }
+
+  return {
+    id: customer.id,
+    phone: customer.phone,
+    name: customer.name,
+    last_order_id: customer.lastOrderId,
+    created_at: customer.createdAt.toISOString(),
+    updated_at: customer.updatedAt.toISOString(),
+  };
 }
 
 /**
@@ -49,27 +73,52 @@ export async function getCustomerByPhone(
 export async function getLastOrder(
   customerId: string
 ): Promise<(OrderRow & { items: unknown[] }) | null> {
-  const result = await db.query<OrderRow & { items: unknown[] }>(
-    `SELECT o.*,
-            json_agg(
-              json_build_object(
-                'productId', oi.product_id,
-                'quantity', oi.quantity,
-                'unitPrice', oi.unit_price,
-                'productName', p.name
-              )
-            ) AS items
-     FROM orders o
-     JOIN order_items oi ON oi.order_id = o.id
-     JOIN products p ON p.id = oi.product_id
-     WHERE o.customer_id = $1
-       AND o.status IN ('ready', 'delivered')
-     GROUP BY o.id
-     ORDER BY o.created_at DESC
-     LIMIT 1`,
-    [customerId]
-  );
-  return result.rows[0] ?? null;
+  const order = await prisma.order.findFirst({
+    where: {
+      customerId,
+      status: { in: ['ready', 'delivered'] },
+    },
+    include: {
+      orderItems: {
+        include: {
+          product: true,
+        },
+      },
+    },
+    orderBy: {
+      createdAt: 'desc',
+    },
+  });
+
+  if (!order) {
+    return null;
+  }
+
+  // Map to expected format
+  const items = order.orderItems.map((oi) => ({
+    productId: oi.productId,
+    quantity: oi.quantity,
+    unitPrice: oi.unitPrice.toString(),
+    productName: oi.product.name,
+  }));
+
+  return {
+    id: order.id,
+    vendor_id: order.vendorId,
+    customer_id: order.customerId,
+    status: order.status,
+    fulfilment_type: order.fulfilmentType,
+    delivery_address: order.deliveryAddress,
+    delivery_fee: order.deliveryFee.toString(),
+    subtotal: order.subtotal.toString(),
+    total: order.total.toString(),
+    queue_position: order.queuePosition,
+    estimated_ready_time: order.estimatedReadyTime?.toISOString() ?? null,
+    notes: order.notes,
+    created_at: order.createdAt.toISOString(),
+    updated_at: order.updatedAt.toISOString(),
+    items,
+  } as OrderRow & { items: unknown[] };
 }
 
 /**
@@ -87,44 +136,57 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderRow> 
     total = 0,
   } = params;
 
-  const client = await db.getClient();
   try {
-    await client.query('BEGIN');
+    const order = await prisma.$transaction(async (tx) => {
+      // Create order
+      const newOrder = await tx.order.create({
+        data: {
+          vendorId,
+          customerId,
+          status: 'confirmed',
+          fulfilmentType,
+          deliveryAddress,
+          deliveryFee,
+          subtotal,
+          total,
+        },
+      });
 
-    // Insert order
-    const orderResult = await client.query<OrderRow>(
-      `INSERT INTO orders (vendor_id, customer_id, status, fulfilment_type, delivery_address, delivery_fee, subtotal, total)
-       VALUES ($1, $2, 'confirmed', $3, $4, $5, $6, $7)
-       RETURNING *`,
-      [vendorId, customerId, fulfilmentType, deliveryAddress, deliveryFee, subtotal, total]
-    );
-    const order = orderResult.rows[0];
+      // Create order items and update stock
+      for (const { product, quantity } of items) {
+        const unitPrice = parseFloat(
+          String(product.special_price ?? product.price)
+        );
 
-    // Insert order items
-    for (const { product, quantity } of items) {
-      const unitPrice = parseFloat(
-        String(product.special_price ?? product.price)
-      );
-      await client.query(
-        `INSERT INTO order_items (order_id, product_id, quantity, unit_price, total_price)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [order.id, product.id, quantity, unitPrice, unitPrice * quantity]
-      );
+        await tx.orderItem.create({
+          data: {
+            orderId: newOrder.id,
+            productId: product.id,
+            quantity,
+            unitPrice,
+            totalPrice: unitPrice * quantity,
+          },
+        });
 
-      // Decrement stock
-      await client.query(
-        `UPDATE products SET stock_level = GREATEST(0, stock_level - $1) WHERE id = $2`,
-        [quantity, product.id]
-      );
-    }
+        // Decrement stock
+        await tx.product.update({
+          where: { id: product.id },
+          data: {
+            stockLevel: {
+              decrement: quantity,
+            },
+          },
+        });
+      }
 
-    // Update customer's last order
-    await client.query(
-      `UPDATE customers SET last_order_id = $1 WHERE id = $2`,
-      [order.id, customerId]
-    );
+      // Update customer's last order
+      await tx.customer.update({
+        where: { id: customerId },
+        data: { lastOrderId: newOrder.id },
+      });
 
-    await client.query('COMMIT');
+      return newOrder;
+    });
 
     logger.info('Order created', { orderId: order.id, vendorId, customerId });
 
@@ -138,15 +200,28 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderRow> 
       logger.warn('Failed to publish order.created event', { error: err.message })
     );
 
-    return order;
+    // Convert to OrderRow format
+    return {
+      id: order.id,
+      vendor_id: order.vendorId,
+      customer_id: order.customerId,
+      status: order.status,
+      fulfilment_type: order.fulfilmentType,
+      delivery_address: order.deliveryAddress,
+      delivery_fee: order.deliveryFee.toString(),
+      subtotal: order.subtotal.toString(),
+      total: order.total.toString(),
+      queue_position: order.queuePosition,
+      estimated_ready_time: order.estimatedReadyTime?.toISOString() ?? null,
+      notes: order.notes,
+      created_at: order.createdAt.toISOString(),
+      updated_at: order.updatedAt.toISOString(),
+    };
   } catch (err) {
-    await client.query('ROLLBACK');
     logger.error('Failed to create order', {
       error: err instanceof Error ? err.message : String(err),
     });
     throw err;
-  } finally {
-    client.release();
   }
 }
 
@@ -160,30 +235,55 @@ export async function getVendorOrders(
   vendorId: string,
   statuses: string[] = ['confirmed', 'preparing', 'ready']
 ): Promise<OrderRow[]> {
-  const result = await db.query<OrderRow>(
-    `SELECT o.*,
-            c.phone AS customer_phone,
-            c.name  AS customer_name,
-            json_agg(
-              json_build_object(
-                'productId', oi.product_id,
-                'productName', p.name,
-                'quantity', oi.quantity,
-                'unitPrice', oi.unit_price,
-                'totalPrice', oi.total_price
-              ) ORDER BY p.name
-            ) AS items
-     FROM orders o
-     JOIN customers c ON c.id = o.customer_id
-     JOIN order_items oi ON oi.order_id = o.id
-     JOIN products p ON p.id = oi.product_id
-     WHERE o.vendor_id = $1
-       AND o.status = ANY($2)
-     GROUP BY o.id, c.phone, c.name
-     ORDER BY o.created_at DESC`,
-    [vendorId, statuses]
-  );
-  return result.rows;
+  const orders = await prisma.order.findMany({
+    where: {
+      vendorId,
+      status: { in: statuses as any[] },
+    },
+    include: {
+      customer: true,
+      orderItems: {
+        include: {
+          product: true,
+        },
+        orderBy: {
+          product: {
+            name: 'asc',
+          },
+        },
+      },
+    },
+    orderBy: {
+      createdAt: 'desc',
+    },
+  });
+
+  // Map to expected format with customer info and items
+  return orders.map((order) => ({
+    id: order.id,
+    vendor_id: order.vendorId,
+    customer_id: order.customerId,
+    status: order.status,
+    fulfilment_type: order.fulfilmentType,
+    delivery_address: order.deliveryAddress,
+    delivery_fee: order.deliveryFee.toString(),
+    subtotal: order.subtotal.toString(),
+    total: order.total.toString(),
+    queue_position: order.queuePosition,
+    estimated_ready_time: order.estimatedReadyTime?.toISOString() ?? null,
+    notes: order.notes,
+    created_at: order.createdAt.toISOString(),
+    updated_at: order.updatedAt.toISOString(),
+    customer_phone: order.customer.phone,
+    customer_name: order.customer.name,
+    items: order.orderItems.map((oi) => ({
+      productId: oi.productId,
+      productName: oi.product.name,
+      quantity: oi.quantity,
+      unitPrice: oi.unitPrice.toString(),
+      totalPrice: oi.totalPrice.toString(),
+    })),
+  })) as OrderRow[];
 }
 
 /**
@@ -198,37 +298,28 @@ export async function updateOrderStatus(
   newStatus: string,
   extra: UpdateOrderStatusExtra = {}
 ): Promise<OrderRow> {
-  const fields: string[] = ['status = $2'];
-  const values: unknown[] = [orderId, newStatus];
+  const updateData: Prisma.OrderUpdateInput = {
+    status: newStatus as any,
+  };
 
   if (extra.queuePosition !== undefined) {
-    values.push(extra.queuePosition);
-    fields.push(`queue_position = $${values.length}`);
+    updateData.queuePosition = extra.queuePosition;
   }
   if (extra.estimatedReadyTime !== undefined) {
-    values.push(extra.estimatedReadyTime);
-    fields.push(`estimated_ready_time = $${values.length}`);
+    updateData.estimatedReadyTime = extra.estimatedReadyTime;
   }
 
-  const result = await db.query<OrderRow>(
-    `UPDATE orders SET ${fields.join(', ')}, updated_at = NOW()
-     WHERE id = $1
-     RETURNING *`,
-    values
-  );
-
-  if (result.rowCount === 0) {
-    throw new Error(`Order ${orderId} not found`);
-  }
-
-  const order = result.rows[0];
+  const order = await prisma.order.update({
+    where: { id: orderId },
+    data: updateData,
+  });
 
   // Publish event (non-fatal)
   await publishEvent(config.kafka.topics.orderUpdated, {
     orderId,
     status: newStatus,
-    customerId: order.customer_id,
-    vendorId: order.vendor_id,
+    customerId: order.customerId,
+    vendorId: order.vendorId,
   }).catch((err: Error) =>
     logger.warn('Failed to publish order.updated event', { error: err.message })
   );
@@ -236,14 +327,29 @@ export async function updateOrderStatus(
   if (newStatus === 'ready') {
     await publishEvent(config.kafka.topics.orderReady, {
       orderId,
-      customerId: order.customer_id,
-      vendorId: order.vendor_id,
+      customerId: order.customerId,
+      vendorId: order.vendorId,
     }).catch((err: Error) =>
       logger.warn('Failed to publish order.ready event', { error: err.message })
     );
   }
 
-  return order;
+  return {
+    id: order.id,
+    vendor_id: order.vendorId,
+    customer_id: order.customerId,
+    status: order.status,
+    fulfilment_type: order.fulfilmentType,
+    delivery_address: order.deliveryAddress,
+    delivery_fee: order.deliveryFee.toString(),
+    subtotal: order.subtotal.toString(),
+    total: order.total.toString(),
+    queue_position: order.queuePosition,
+    estimated_ready_time: order.estimatedReadyTime?.toISOString() ?? null,
+    notes: order.notes,
+    created_at: order.createdAt.toISOString(),
+    updated_at: order.updatedAt.toISOString(),
+  };
 }
 
 /**
@@ -251,11 +357,13 @@ export async function updateOrderStatus(
  * @param vendorId
  */
 export async function getNextQueuePosition(vendorId: string): Promise<number> {
-  const result = await db.query<{ count: string }>(
-    `SELECT COUNT(*) AS count FROM orders WHERE vendor_id = $1 AND status IN ('confirmed', 'preparing')`,
-    [vendorId]
-  );
-  return parseInt(result.rows[0].count, 10) + 1;
+  const count = await prisma.order.count({
+    where: {
+      vendorId,
+      status: { in: ['confirmed', 'preparing'] },
+    },
+  });
+  return count + 1;
 }
 
 /**
