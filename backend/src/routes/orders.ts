@@ -22,7 +22,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 
   const statusParam = req.query.status as string | undefined;
   const statuses = statusParam
-    ? statusParam.split(',')
+    ? statusParam.split(',').map((s) => s.trim()).filter(Boolean)
     : ['confirmed', 'preparing', 'ready'];
 
   try {

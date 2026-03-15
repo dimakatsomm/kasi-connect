@@ -65,22 +65,21 @@ router.post(
       name,
       price,
       description,
-      stockLevel = 0,
-      lowStockThreshold = 5,
+      stockLevel,
+      lowStockThreshold,
       aliases,
     } = req.body as {
       vendorId: string;
       name: string;
       price: string;
       description?: string;
-      stockLevel?: number;
-      lowStockThreshold?: number;
+      stockLevel?: string | number;
+      lowStockThreshold?: string | number;
       aliases?: string | string[];
     };
 
     let imageUrl: string | null = null;
     if (req.file) {
-      // In production, upload to Huawei OBS here
       imageUrl = `/uploads/${req.file.originalname}`;
     }
 
@@ -90,6 +89,9 @@ router.post(
         : aliases.split(',').map((a) => a.trim())
       : [];
 
+    const stockLevelInt = parseInt(String(stockLevel ?? 0), 10);
+    const lowStockThresholdInt = parseInt(String(lowStockThreshold ?? 5), 10);
+
     try {
       const product = await prisma.product.create({
         data: {
@@ -98,8 +100,8 @@ router.post(
           description,
           price,
           image_url: imageUrl,
-          stock_level: stockLevel,
-          low_stock_threshold: lowStockThreshold,
+          stock_level: Number.isFinite(stockLevelInt) ? stockLevelInt : 0,
+          low_stock_threshold: Number.isFinite(lowStockThresholdInt) ? lowStockThresholdInt : 5,
           aliases: aliasesArray,
         },
       });
@@ -149,6 +151,20 @@ router.patch(
           : String(value)
               .split(',')
               .map((a) => a.trim());
+        return;
+      }
+
+      if (field === 'stock_level' || field === 'low_stock_threshold') {
+        const n = parseInt(String(value), 10);
+        if (Number.isFinite(n)) {
+          data[field] = n as Prisma.ProductUpdateInput[K];
+        }
+        return;
+      }
+
+      if (field === 'is_available' || field === 'is_special') {
+        const strVal = String(value).toLowerCase();
+        data[field] = (strVal === 'true' || strVal === '1') as Prisma.ProductUpdateInput[K];
         return;
       }
 
