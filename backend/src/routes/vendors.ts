@@ -3,6 +3,7 @@ import { body, param, validationResult } from 'express-validator';
 import { prisma } from '../db';
 import logger from '../config/logger';
 import type { VendorRow } from '../types';
+import { Prisma } from '../generated/prisma';
 
 const router = Router();
 
@@ -39,6 +40,7 @@ router.get('/', async (_req: Request, res: Response): Promise<void> => {
       delivery_fee: v.deliveryFee.toNumber(),
       is_active: v.isActive,
       created_at: v.createdAt.toISOString(),
+      updated_at: v.updatedAt.toISOString(),
     }));
 
     res.json({ vendors: vendorsResponse });
@@ -185,13 +187,13 @@ router.patch(
       'deliveryFee',
       'isActive',
     ];
-    const updates: Record<string, unknown> = {};
+    const updates: Prisma.VendorUpdateInput = {};
     const bodyData = req.body as Record<string, unknown>;
 
     for (const field of allowed) {
       const snakeKey = field.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
       if (bodyData[field] !== undefined || bodyData[snakeKey] !== undefined) {
-        updates[field] = bodyData[field] ?? bodyData[snakeKey];
+        updates[field as keyof Prisma.VendorUpdateInput] = (bodyData[field] ?? bodyData[snakeKey]) as any;
       }
     }
 
@@ -221,11 +223,11 @@ router.patch(
 
       res.json({ vendor: vendorResponse });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (message.includes('Record to update not found')) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
         res.status(404).json({ error: 'Vendor not found' });
         return;
       }
+      const message = err instanceof Error ? err.message : String(err);
       logger.error('Failed to update vendor', { error: message });
       res.status(500).json({ error: 'Internal server error' });
     }

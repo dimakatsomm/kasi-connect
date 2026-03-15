@@ -8,7 +8,7 @@ import type {
   CreateOrderParams,
   UpdateOrderStatusExtra,
 } from '../types';
-import { Prisma } from '../generated/prisma';
+import { Prisma, OrderStatus } from '../generated/prisma';
 
 /**
  * Create or upsert a customer record.
@@ -76,7 +76,7 @@ export async function getLastOrder(
   const order = await prisma.order.findFirst({
     where: {
       customerId,
-      status: { in: ['ready', 'delivered'] },
+      status: { in: [OrderStatus.ready, OrderStatus.delivered] },
     },
     include: {
       orderItems: {
@@ -98,7 +98,7 @@ export async function getLastOrder(
   const items = order.orderItems.map((oi) => ({
     productId: oi.productId,
     quantity: oi.quantity,
-    unitPrice: oi.unitPrice.toString(),
+    unitPrice: oi.unitPrice.toNumber(),
     productName: oi.product.name,
   }));
 
@@ -109,9 +109,9 @@ export async function getLastOrder(
     status: order.status,
     fulfilment_type: order.fulfilmentType,
     delivery_address: order.deliveryAddress,
-    delivery_fee: order.deliveryFee.toString(),
-    subtotal: order.subtotal.toString(),
-    total: order.total.toString(),
+    delivery_fee: order.deliveryFee.toNumber(),
+    subtotal: order.subtotal.toNumber(),
+    total: order.total.toNumber(),
     queue_position: order.queuePosition,
     estimated_ready_time: order.estimatedReadyTime?.toISOString() ?? null,
     notes: order.notes,
@@ -143,7 +143,7 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderRow> 
         data: {
           vendorId,
           customerId,
-          status: 'confirmed',
+          status: OrderStatus.confirmed,
           fulfilmentType,
           deliveryAddress,
           deliveryFee,
@@ -169,6 +169,17 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderRow> 
         });
 
         // Decrement stock
+        const currentProduct = await tx.product.findUnique({
+          where: { id: product.id },
+          select: { stockLevel: true },
+        });
+
+        if (!currentProduct || currentProduct.stockLevel < quantity) {
+          throw new Error(
+            `Insufficient stock for product ${product.id}. Available: ${currentProduct?.stockLevel ?? 0}, Requested: ${quantity}`
+          );
+        }
+
         await tx.product.update({
           where: { id: product.id },
           data: {
@@ -208,9 +219,9 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderRow> 
       status: order.status,
       fulfilment_type: order.fulfilmentType,
       delivery_address: order.deliveryAddress,
-      delivery_fee: order.deliveryFee.toString(),
-      subtotal: order.subtotal.toString(),
-      total: order.total.toString(),
+      delivery_fee: order.deliveryFee.toNumber(),
+      subtotal: order.subtotal.toNumber(),
+      total: order.total.toNumber(),
       queue_position: order.queuePosition,
       estimated_ready_time: order.estimatedReadyTime?.toISOString() ?? null,
       notes: order.notes,
@@ -233,12 +244,12 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderRow> 
  */
 export async function getVendorOrders(
   vendorId: string,
-  statuses: string[] = ['confirmed', 'preparing', 'ready']
+  statuses: OrderStatus[] = [OrderStatus.confirmed, OrderStatus.preparing, OrderStatus.ready]
 ): Promise<OrderRow[]> {
   const orders = await prisma.order.findMany({
     where: {
       vendorId,
-      status: { in: statuses as any[] },
+      status: { in: statuses },
     },
     include: {
       customer: true,
@@ -266,9 +277,9 @@ export async function getVendorOrders(
     status: order.status,
     fulfilment_type: order.fulfilmentType,
     delivery_address: order.deliveryAddress,
-    delivery_fee: order.deliveryFee.toString(),
-    subtotal: order.subtotal.toString(),
-    total: order.total.toString(),
+    delivery_fee: order.deliveryFee.toNumber(),
+    subtotal: order.subtotal.toNumber(),
+    total: order.total.toNumber(),
     queue_position: order.queuePosition,
     estimated_ready_time: order.estimatedReadyTime?.toISOString() ?? null,
     notes: order.notes,
@@ -280,8 +291,8 @@ export async function getVendorOrders(
       productId: oi.productId,
       productName: oi.product.name,
       quantity: oi.quantity,
-      unitPrice: oi.unitPrice.toString(),
-      totalPrice: oi.totalPrice.toString(),
+      unitPrice: oi.unitPrice.toNumber(),
+      totalPrice: oi.totalPrice.toNumber(),
     })),
   })) as OrderRow[];
 }
@@ -295,11 +306,11 @@ export async function getVendorOrders(
  */
 export async function updateOrderStatus(
   orderId: string,
-  newStatus: string,
+  newStatus: OrderStatus,
   extra: UpdateOrderStatusExtra = {}
 ): Promise<OrderRow> {
   const updateData: Prisma.OrderUpdateInput = {
-    status: newStatus as any,
+    status: newStatus,
   };
 
   if (extra.queuePosition !== undefined) {
@@ -324,7 +335,7 @@ export async function updateOrderStatus(
     logger.warn('Failed to publish order.updated event', { error: err.message })
   );
 
-  if (newStatus === 'ready') {
+  if (newStatus === OrderStatus.ready) {
     await publishEvent(config.kafka.topics.orderReady, {
       orderId,
       customerId: order.customerId,
@@ -341,9 +352,9 @@ export async function updateOrderStatus(
     status: order.status,
     fulfilment_type: order.fulfilmentType,
     delivery_address: order.deliveryAddress,
-    delivery_fee: order.deliveryFee.toString(),
-    subtotal: order.subtotal.toString(),
-    total: order.total.toString(),
+    delivery_fee: order.deliveryFee.toNumber(),
+    subtotal: order.subtotal.toNumber(),
+    total: order.total.toNumber(),
     queue_position: order.queuePosition,
     estimated_ready_time: order.estimatedReadyTime?.toISOString() ?? null,
     notes: order.notes,
@@ -360,7 +371,7 @@ export async function getNextQueuePosition(vendorId: string): Promise<number> {
   const count = await prisma.order.count({
     where: {
       vendorId,
-      status: { in: ['confirmed', 'preparing'] },
+      status: { in: [OrderStatus.confirmed, OrderStatus.preparing] },
     },
   });
   return count + 1;

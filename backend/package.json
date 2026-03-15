@@ -4,6 +4,7 @@
   "description": "KasiConnect WhatsApp ordering backend",
   "main": "dist/app.js",
   "scripts": {
+    "postinstall": "prisma generate",
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
