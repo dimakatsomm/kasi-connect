@@ -28,7 +28,7 @@ export function AddProductForm({ vendorId, onSuccess }: AddProductFormProps) {
       queryClient.invalidateQueries({ queryKey: ['products', vendorId] });
       form.reset();
       onSuccess?.();
-    } catch (err: unknown) {
+    } catch {
       setError('Failed to create product. Please check the form and try again.');
     } finally {
       setLoading(false);
