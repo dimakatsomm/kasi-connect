@@ -1,13 +1,26 @@
 import { buildOrderSummary } from '../src/services/productService';
 import type { MatchedItem } from '../src/types';
 
-// We mock the db module so matchProducts can be tested without a live database
+// Mock Prisma
 jest.mock('../src/db', () => ({
-  query: jest.fn(),
+  prisma: {
+    product: {
+      findMany: jest.fn(),
+    },
+  },
 }));
 
-import * as db from '../src/db';
+import { prisma } from '../src/db';
 import { matchProducts } from '../src/services/productService';
+
+// Helper function to create Decimal-like objects for tests
+function decimal(value: string | number) {
+  return {
+    toString: () => String(value),
+    toNumber: () => Number(value),
+    toFixed: () => Number(value).toFixed(2),
+  } as any;
+}
 
 // Helper to create a minimal MatchedItem for buildOrderSummary tests
 function makeItem(
@@ -82,71 +95,71 @@ describe('Product Service — matchProducts', () => {
     {
       id: 'p1',
       name: 'Bread',
-      price: '15.00',
-      special_price: null,
+      price: decimal('15.00'),
+      specialPrice: null,
       aliases: ['loaf', 'mkate'],
-      vendor_id: 'v1',
+      vendorId: 'v1',
       description: null,
-      image_url: null,
-      stock_level: 10,
-      low_stock_threshold: 5,
-      is_available: true,
-      is_special: false,
-      created_at: '',
-      updated_at: '',
+      imageUrl: null,
+      stockLevel: 10,
+      lowStockThreshold: 5,
+      isAvailable: true,
+      isSpecial: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     },
     {
       id: 'p2',
       name: 'Full Cream Milk 1L',
-      price: '22.00',
-      special_price: null,
+      price: decimal('22.00'),
+      specialPrice: null,
       aliases: ['milk'],
-      vendor_id: 'v1',
+      vendorId: 'v1',
       description: null,
-      image_url: null,
-      stock_level: 10,
-      low_stock_threshold: 5,
-      is_available: true,
-      is_special: false,
-      created_at: '',
-      updated_at: '',
+      imageUrl: null,
+      stockLevel: 10,
+      lowStockThreshold: 5,
+      isAvailable: true,
+      isSpecial: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     },
     {
       id: 'p3',
       name: 'Coca-Cola 500ml',
-      price: '18.00',
-      special_price: null,
+      price: decimal('18.00'),
+      specialPrice: null,
       aliases: ['coke', 'cola'],
-      vendor_id: 'v1',
+      vendorId: 'v1',
       description: null,
-      image_url: null,
-      stock_level: 10,
-      low_stock_threshold: 5,
-      is_available: true,
-      is_special: false,
-      created_at: '',
-      updated_at: '',
+      imageUrl: null,
+      stockLevel: 10,
+      lowStockThreshold: 5,
+      isAvailable: true,
+      isSpecial: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     },
     {
       id: 'p4',
       name: 'Pap 500g',
-      price: '12.00',
-      special_price: null,
+      price: decimal('12.00'),
+      specialPrice: null,
       aliases: ['pap', 'phutu'],
-      vendor_id: 'v1',
+      vendorId: 'v1',
       description: null,
-      image_url: null,
-      stock_level: 10,
-      low_stock_threshold: 5,
-      is_available: true,
-      is_special: false,
-      created_at: '',
-      updated_at: '',
+      imageUrl: null,
+      stockLevel: 10,
+      lowStockThreshold: 5,
+      isAvailable: true,
+      isSpecial: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     },
   ];
 
   beforeEach(() => {
-    (db.query as jest.Mock).mockResolvedValue({ rows: mockProducts });
+    (prisma.product.findMany as jest.Mock).mockResolvedValue(mockProducts);
   });
 
   test('matches exact product names', async () => {
@@ -177,7 +190,7 @@ describe('Product Service — matchProducts', () => {
   });
 
   test('returns empty arrays for empty vendor catalogue', async () => {
-    (db.query as jest.Mock).mockResolvedValueOnce({ rows: [] });
+    (prisma.product.findMany as jest.Mock).mockResolvedValueOnce([]);
     const parsedItems = [{ quantity: 1, name: 'bread', raw: 'bread' }];
     const { matched, unmatched } = await matchProducts('vendor1', parsedItems);
     expect(matched).toHaveLength(0);

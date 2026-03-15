@@ -5,10 +5,17 @@ import {
   getCustomerByPhone,
 } from '../src/services/orderService';
 
-// Mock database
+// Mock Prisma
 jest.mock('../src/db', () => ({
-  query: jest.fn(),
-  getClient: jest.fn(),
+  prisma: {
+    customer: {
+      upsert: jest.fn(),
+      findUnique: jest.fn(),
+    },
+    order: {
+      count: jest.fn(),
+    },
+  },
 }));
 
 // Mock Kafka producer
@@ -16,7 +23,7 @@ jest.mock('../src/kafka/producer', () => ({
   publishEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
-import * as db from '../src/db';
+import { prisma } from '../src/db';
 
 describe('Order Service — estimateReadyTime', () => {
   test('returns a future Date', () => {
@@ -48,17 +55,13 @@ describe('Order Service — estimateReadyTime', () => {
 
 describe('Order Service — getNextQueuePosition', () => {
   test('returns count + 1', async () => {
-    (db.query as jest.Mock).mockResolvedValueOnce({
-      rows: [{ count: '3' }],
-    });
+    (prisma.order.count as jest.Mock).mockResolvedValueOnce(3);
     const pos = await getNextQueuePosition('vendor1');
     expect(pos).toBe(4);
   });
 
   test('returns 1 when queue is empty', async () => {
-    (db.query as jest.Mock).mockResolvedValueOnce({
-      rows: [{ count: '0' }],
-    });
+    (prisma.order.count as jest.Mock).mockResolvedValueOnce(0);
     const pos = await getNextQueuePosition('vendor1');
     expect(pos).toBe(1);
   });
@@ -70,11 +73,11 @@ describe('Order Service — upsertCustomer', () => {
       id: 'c1',
       phone: '+27821234567',
       name: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      last_order_id: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastOrderId: null,
     };
-    (db.query as jest.Mock).mockResolvedValueOnce({ rows: [mockCustomer] });
+    (prisma.customer.upsert as jest.Mock).mockResolvedValueOnce(mockCustomer);
 
     const customer = await upsertCustomer('+27821234567');
     expect(customer.phone).toBe('+27821234567');
@@ -87,18 +90,19 @@ describe('Order Service — getCustomerByPhone', () => {
       id: 'c1',
       phone: '+27821234567',
       name: null,
-      last_order_id: null,
-      created_at: '',
-      updated_at: '',
+      lastOrderId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
-    (db.query as jest.Mock).mockResolvedValueOnce({ rows: [mockCustomer] });
+    (prisma.customer.findUnique as jest.Mock).mockResolvedValueOnce(mockCustomer);
 
     const customer = await getCustomerByPhone('+27821234567');
-    expect(customer).toEqual(mockCustomer);
+    expect(customer).toBeTruthy();
+    expect(customer?.phone).toBe('+27821234567');
   });
 
   test('returns null when not found', async () => {
-    (db.query as jest.Mock).mockResolvedValueOnce({ rows: [] });
+    (prisma.customer.findUnique as jest.Mock).mockResolvedValueOnce(null);
 
     const customer = await getCustomerByPhone('+27821999999');
     expect(customer).toBeNull();

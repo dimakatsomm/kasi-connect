@@ -1,10 +1,21 @@
 import request from 'supertest';
-import app from '../src/app';
+
+// Mock Prisma before importing app
+jest.mock('../src/db', () => ({
+  prisma: {
+    customer: {},
+    order: {},
+    product: {},
+    vendor: {},
+  },
+}));
 
 // Mock the message handler so we don't need live Redis/DB in webhook tests
 jest.mock('../src/services/messageHandler', () => ({
   handleMessage: jest.fn().mockResolvedValue(undefined),
 }));
+
+import app from '../src/app';
 
 describe('Webhook Route', () => {
   const VERIFY_TOKEN = 'test_verify_token';
