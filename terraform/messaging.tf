@@ -30,4 +30,5 @@ resource "huaweicloud_dms_kafka_topic" "order_events" {
   instance_id = huaweicloud_dms_kafka_instance.events.id
   name        = "${local.resource_prefix}-orders"
   partitions  = var.kafka_topic_partitions
+  replicas    = min(var.dms_broker_num, 3)
 }

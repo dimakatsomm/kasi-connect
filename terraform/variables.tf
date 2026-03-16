@@ -45,24 +45,44 @@ variable "vpc_cidr" {
   description = "CIDR for the dedicated VPC."
   type        = string
   default     = "10.10.0.0/16"
+
+  validation {
+    condition     = can(cidrhost(var.vpc_cidr, 0))
+    error_message = "vpc_cidr must be a valid CIDR block."
+  }
 }
 
 variable "public_subnet_cidr" {
   description = "CIDR for the public subnet hosting load balancers / NAT."
   type        = string
   default     = "10.10.0.0/24"
+
+  validation {
+    condition     = can(cidrhost(var.public_subnet_cidr, 0))
+    error_message = "public_subnet_cidr must be a valid CIDR block."
+  }
 }
 
 variable "app_subnet_cidr" {
   description = "CIDR for the private application subnet where CCE workers live."
   type        = string
   default     = "10.10.1.0/24"
+
+  validation {
+    condition     = can(cidrhost(var.app_subnet_cidr, 0))
+    error_message = "app_subnet_cidr must be a valid CIDR block."
+  }
 }
 
 variable "data_subnet_cidr" {
   description = "CIDR dedicated to stateful managed services (RDS, Redis, Kafka)."
   type        = string
   default     = "10.10.2.0/24"
+
+  validation {
+    condition     = can(cidrhost(var.data_subnet_cidr, 0))
+    error_message = "data_subnet_cidr must be a valid CIDR block."
+  }
 }
 
 variable "dns_servers" {
@@ -75,12 +95,22 @@ variable "trusted_cidrs" {
   description = "CIDR blocks allowed to reach SSH and internal control-plane ports. Defaults to the VPC CIDR."
   type        = list(string)
   default     = []
+
+  validation {
+    condition     = alltrue([for c in var.trusted_cidrs : can(cidrhost(c, 0))])
+    error_message = "All entries in trusted_cidrs must be valid CIDR blocks."
+  }
 }
 
 variable "http_ingress_cidrs" {
   description = "CIDRs allowed to reach HTTP/HTTPS (defaults to 0.0.0.0/0)."
   type        = list(string)
   default     = []
+
+  validation {
+    condition     = alltrue([for c in var.http_ingress_cidrs : can(cidrhost(c, 0))])
+    error_message = "All entries in http_ingress_cidrs must be valid CIDR blocks."
+  }
 }
 
 variable "ssh_public_key" {
@@ -133,6 +163,11 @@ variable "cce_pod_cidr" {
   description = "Pod CIDR allocated within the cluster."
   type        = string
   default     = "172.21.0.0/16"
+
+  validation {
+    condition     = can(cidrhost(var.cce_pod_cidr, 0))
+    error_message = "cce_pod_cidr must be a valid CIDR block."
+  }
 }
 
 variable "cce_node_flavor" {
@@ -145,6 +180,11 @@ variable "cce_node_count" {
   description = "Number of worker nodes to create."
   type        = number
   default     = 2
+
+  validation {
+    condition     = var.cce_node_count >= 1
+    error_message = "cce_node_count must be at least 1."
+  }
 }
 
 variable "cce_node_root_volume_type" {
@@ -187,6 +227,11 @@ variable "rds_port" {
   description = "Database port."
   type        = number
   default     = 5432
+
+  validation {
+    condition     = var.rds_port >= 1 && var.rds_port <= 65535
+    error_message = "rds_port must be between 1 and 65535."
+  }
 }
 
 variable "rds_password" {
@@ -212,6 +257,11 @@ variable "rds_backup_keep_days" {
   description = "Number of days to retain automated backups."
   type        = number
   default     = 7
+
+  validation {
+    condition     = var.rds_backup_keep_days >= 1 && var.rds_backup_keep_days <= 732
+    error_message = "rds_backup_keep_days must be between 1 and 732."
+  }
 }
 
 variable "rds_ha_mode" {
@@ -273,6 +323,11 @@ variable "dms_broker_num" {
   description = "Number of Kafka brokers."
   type        = number
   default     = 3
+
+  validation {
+    condition     = var.dms_broker_num >= 1
+    error_message = "dms_broker_num must be at least 1."
+  }
 }
 
 variable "dms_storage_spec_code" {
@@ -351,4 +406,20 @@ variable "kafka_topic_partitions" {
   description = "Partition count for the primary Kafka topic."
   type        = number
   default     = 6
+
+  validation {
+    condition     = var.kafka_topic_partitions >= 1
+    error_message = "kafka_topic_partitions must be at least 1."
+  }
+}
+
+variable "nat_bandwidth_size" {
+  description = "Bandwidth in Mbps for the NAT gateway Elastic IP used for CCE worker egress."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.nat_bandwidth_size >= 1
+    error_message = "nat_bandwidth_size must be at least 1 Mbps."
+  }
 }

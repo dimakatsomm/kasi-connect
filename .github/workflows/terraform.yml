@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   staging:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/develop') || (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging')
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/develop') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
     runs-on: ubuntu-latest
     environment: staging
     defaults:
@@ -48,6 +48,7 @@ jobs:
           : "${HUAWEICLOUD_SECRET_KEY:?Set staging secret HUAWEICLOUD_SECRET_KEY}"
           : "${TF_VAR_ssh_public_key:?Set staging secret HUAWEICLOUD_SSH_PUBLIC_KEY}"
           : "${TF_VAR_region:?Add staging secret HUAWEICLOUD_REGION (region code)}"
+          : "${TF_VAR_project_id:?Set staging secret HUAWEICLOUD_PROJECT_ID}"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -69,10 +70,17 @@ jobs:
 
       - name: Terraform plan
         shell: bash
-        run: terraform plan -input=false -no-color
+        run: terraform plan -input=false -no-color -out=tfplan
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-staging
+          path: terraform/tfplan
+          retention-days: 7
 
   production:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.environment == 'production')
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
     runs-on: ubuntu-latest
     environment: production
     defaults:
@@ -97,6 +105,7 @@ jobs:
           : "${HUAWEICLOUD_SECRET_KEY:?Set production secret HUAWEICLOUD_SECRET_KEY}"
           : "${TF_VAR_ssh_public_key:?Set production secret HUAWEICLOUD_SSH_PUBLIC_KEY}"
           : "${TF_VAR_region:?Add production secret HUAWEICLOUD_REGION (region code)}"
+          : "${TF_VAR_project_id:?Set production secret HUAWEICLOUD_PROJECT_ID}"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -118,4 +127,11 @@ jobs:
 
       - name: Terraform plan
         shell: bash
-        run: terraform plan -input=false -no-color
+        run: terraform plan -input=false -no-color -out=tfplan
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-production
+          path: terraform/tfplan
+          retention-days: 7

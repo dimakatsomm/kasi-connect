@@ -15,9 +15,11 @@ enable_public_api = true
 cce_node_count    = 3
 
 # Data plane credentials (override defaults instead of using generated secrets)
-rds_password         = "S3cure#Postgres"
-dcs_password         = "Str0ng#Redis"
-dms_manager_password = "Sup3r#Kafka"
+# Leave these empty to have Terraform auto-generate secure random passwords.
+# WARNING: restrict http_ingress_cidrs to a specific CIDR in production (not 0.0.0.0/0).
+rds_password         = ""
+dcs_password         = ""
+dms_manager_password = ""
 
 # Storage overrides
 obs_bucket_name         = "kasi-connect-assets-staging"

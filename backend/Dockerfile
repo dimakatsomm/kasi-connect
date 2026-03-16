@@ -29,6 +29,8 @@ COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 # Copy generated Prisma client artifacts required by @prisma/client at runtime
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+# Copy @prisma/engines so `prisma migrate deploy` can locate its query/migration engine binaries
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
 # Non-root user for security
 RUN addgroup -g 1001 -S nodejs && adduser -S kasiapp -u 1001
