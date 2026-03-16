@@ -21,6 +21,5 @@ resource "huaweicloud_dcs_instance" "redis" {
   password           = local.redis_password
   maintain_begin     = var.dcs_maintain_begin
   maintain_end       = var.dcs_maintain_end
-  enable_publicip    = false
   tags               = local.tags
 }

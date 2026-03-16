@@ -31,7 +31,6 @@ resource "huaweicloud_rds_instance" "postgres" {
   vpc_id              = huaweicloud_vpc.main.id
   subnet_id           = huaweicloud_vpc_subnet.this["data"].id
   security_group_id   = huaweicloud_networking_secgroup.data.id
-  port                = var.rds_port
   ha_replication_mode = var.rds_ha_mode
 
   db {
