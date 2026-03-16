@@ -71,7 +71,7 @@ jobs:
             -backend-config="bucket=${TF_STATE_BUCKET}" \
             -backend-config="key=staging/terraform.tfstate" \
             -backend-config="region=${TF_VAR_region}" \
-            -backend-config="endpoint=https://obs.${TF_VAR_region}.myhuaweicloud.com" \
+            -backend-config="endpoints={s3=\"https://obs.${TF_VAR_region}.myhuaweicloud.com\"}" \
             -backend-config="access_key=${HUAWEICLOUD_ACCESS_KEY}" \
             -backend-config="secret_key=${HUAWEICLOUD_SECRET_KEY}"
 
@@ -153,7 +153,7 @@ jobs:
             -backend-config="bucket=${TF_STATE_BUCKET}" \
             -backend-config="key=production/terraform.tfstate" \
             -backend-config="region=${TF_VAR_region}" \
-            -backend-config="endpoint=https://obs.${TF_VAR_region}.myhuaweicloud.com" \
+            -backend-config="endpoints={s3=\"https://obs.${TF_VAR_region}.myhuaweicloud.com\"}" \
             -backend-config="access_key=${HUAWEICLOUD_ACCESS_KEY}" \
             -backend-config="secret_key=${HUAWEICLOUD_SECRET_KEY}"
 
