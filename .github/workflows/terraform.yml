@@ -164,12 +164,14 @@ jobs:
         run: |
           export AWS_ACCESS_KEY_ID="${HUAWEICLOUD_ACCESS_KEY}"
           export AWS_SECRET_ACCESS_KEY="${HUAWEICLOUD_SECRET_KEY}"
+          export AWS_DEFAULT_REGION="${TF_VAR_region}"
+          export AWS_REGION="${TF_VAR_region}"
           OBS_ENDPOINT="https://obs.${TF_VAR_region}.myhuaweicloud.com"
-          if aws --endpoint-url "${OBS_ENDPOINT}" s3api head-bucket --bucket "${TF_STATE_BUCKET}" 2>&1; then
+          if aws --region "${TF_VAR_region}" --endpoint-url "${OBS_ENDPOINT}" s3api head-bucket --bucket "${TF_STATE_BUCKET}" >/dev/null 2>&1; then
             echo "Terraform state bucket already exists: ${TF_STATE_BUCKET}"
           else
             echo "Creating Terraform state bucket: ${TF_STATE_BUCKET}"
-            aws --endpoint-url "${OBS_ENDPOINT}" s3api create-bucket --bucket "${TF_STATE_BUCKET}"
+            aws --region "${TF_VAR_region}" --endpoint-url "${OBS_ENDPOINT}" s3api create-bucket --bucket "${TF_STATE_BUCKET}"
           fi
 
       - name: Terraform init
