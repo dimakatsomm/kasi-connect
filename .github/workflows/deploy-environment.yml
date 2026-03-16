@@ -12,9 +12,6 @@ on:
         required: true
       HUAWEICLOUD_SECRET_KEY:
         required: true
-      NEXT_PUBLIC_API_URL:
-        required: true
-        required: true
       HUAWEICLOUD_REGION:
         required: true
       HUAWEICLOUD_PROJECT_ID:
@@ -43,15 +40,23 @@ on:
         required: false
       KAFKA_BROKERS:
         required: true
-      WHATSAPP_VERIFY_TOKEN:
-        required: true
-      WHATSAPP_ACCESS_TOKEN:
-        required: true
-      WHATSAPP_PHONE_NUMBER_ID:
-        required: true
-      OBS_BUCKET:
-        required: true
       NEXT_PUBLIC_API_URL:
+        required: true
+      WHATSAPP_PROVIDER:
+        required: false
+      WHATSAPP_VERIFY_TOKEN:
+        required: false
+      WHATSAPP_ACCESS_TOKEN:
+        required: false
+      WHATSAPP_PHONE_NUMBER_ID:
+        required: false
+      TWILIO_ACCOUNT_SID:
+        required: false
+      TWILIO_AUTH_TOKEN:
+        required: false
+      TWILIO_WHATSAPP_FROM:
+        required: false
+      OBS_BUCKET:
         required: true
 
 permissions:
@@ -83,6 +88,24 @@ jobs:
           : "${SWR_ORGANIZATION:?SWR_ORGANIZATION is required}"
           : "${CCE_CLUSTER_ID:?CCE_CLUSTER_ID is required for environment '${{ inputs.environment }}'}"
           : "${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required for building the frontend image}"
+
+          WHATSAPP_PROVIDER_VALUE="${{ secrets.WHATSAPP_PROVIDER }}"
+          if [ -z "${WHATSAPP_PROVIDER_VALUE}" ]; then
+            WHATSAPP_PROVIDER_VALUE="meta"
+          fi
+          echo "WHATSAPP_PROVIDER=${WHATSAPP_PROVIDER_VALUE}" >> "$GITHUB_ENV"
+
+          if [ "${WHATSAPP_PROVIDER_VALUE}" = "twilio" ]; then
+            if [ -z "${{ secrets.TWILIO_ACCOUNT_SID }}" ] || [ -z "${{ secrets.TWILIO_AUTH_TOKEN }}" ] || [ -z "${{ secrets.TWILIO_WHATSAPP_FROM }}" ]; then
+              echo "ERROR: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_WHATSAPP_FROM secrets must be set when WHATSAPP_PROVIDER=twilio"
+              exit 1
+            fi
+          else
+            if [ -z "${{ secrets.WHATSAPP_VERIFY_TOKEN }}" ] || [ -z "${{ secrets.WHATSAPP_ACCESS_TOKEN }}" ] || [ -z "${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}" ]; then
+              echo "ERROR: WHATSAPP_VERIFY_TOKEN, WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID secrets must be set when WHATSAPP_PROVIDER=meta (default)"
+              exit 1
+            fi
+          fi
 
       - name: Set image tag
         id: image_tag
@@ -223,9 +246,13 @@ jobs:
             --from-literal=REDIS_PORT="${{ secrets.REDIS_PORT }}" \
             --from-literal=REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}" \
             --from-literal=KAFKA_BROKERS="${{ secrets.KAFKA_BROKERS }}" \
+            --from-literal=WHATSAPP_PROVIDER="${WHATSAPP_PROVIDER:-meta}" \
             --from-literal=WHATSAPP_VERIFY_TOKEN="${{ secrets.WHATSAPP_VERIFY_TOKEN }}" \
             --from-literal=WHATSAPP_ACCESS_TOKEN="${{ secrets.WHATSAPP_ACCESS_TOKEN }}" \
             --from-literal=WHATSAPP_PHONE_NUMBER_ID="${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}" \
+            --from-literal=TWILIO_ACCOUNT_SID="${{ secrets.TWILIO_ACCOUNT_SID }}" \
+            --from-literal=TWILIO_AUTH_TOKEN="${{ secrets.TWILIO_AUTH_TOKEN }}" \
+            --from-literal=TWILIO_WHATSAPP_FROM="${{ secrets.TWILIO_WHATSAPP_FROM }}" \
             --from-literal=OBS_ENDPOINT="https://obs.${HW_REGION}.myhuaweicloud.com" \
             --from-literal=OBS_BUCKET="${{ secrets.OBS_BUCKET }}" \
             --from-literal=OBS_ACCESS_KEY="${HW_AK}" \
