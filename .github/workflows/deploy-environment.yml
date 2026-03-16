@@ -12,6 +12,9 @@ on:
         required: true
       HUAWEICLOUD_SECRET_KEY:
         required: true
+      NEXT_PUBLIC_API_URL:
+        required: true
+        required: true
       HUAWEICLOUD_REGION:
         required: true
       HUAWEICLOUD_PROJECT_ID:
@@ -65,6 +68,7 @@ jobs:
       HW_PROJECT_ID: ${{ secrets.HUAWEICLOUD_PROJECT_ID }}
       SWR_ORGANIZATION: ${{ secrets.SWR_ORGANIZATION }}
       CCE_CLUSTER_ID: ${{ secrets.CCE_CLUSTER_ID }}
+      NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -78,6 +82,7 @@ jobs:
           : "${HW_PROJECT_ID:?HUAWEICLOUD_PROJECT_ID is required}"
           : "${SWR_ORGANIZATION:?SWR_ORGANIZATION is required}"
           : "${CCE_CLUSTER_ID:?CCE_CLUSTER_ID is required for environment '${{ inputs.environment }}'}"
+          : "${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required for building the frontend image}"
 
       - name: Set image tag
         id: image_tag
@@ -114,7 +119,7 @@ jobs:
         shell: bash
         run: |
           IMAGE="swr.${HW_REGION}.myhuaweicloud.com/${SWR_ORGANIZATION}/kasi-connect-frontend:${{ steps.image_tag.outputs.tag }}"
-          docker build -t "${IMAGE}" ./frontend
+          docker build --build-arg NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL}" -t "${IMAGE}" ./frontend
           docker push "${IMAGE}"
           echo "FRONTEND_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
 
