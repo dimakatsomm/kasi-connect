@@ -124,7 +124,8 @@ Sessions expire after **30 minutes** of inactivity (Redis TTL).
 ### Prerequisites
 - Node.js 20+
 - Docker & Docker Compose
-- WhatsApp Business account with Meta Cloud API access
+- WhatsApp Business account with Meta Cloud API access (for production)
+- Twilio account (for the WhatsApp Sandbox or Twilio-hosted production numbers)
 
 ### 1. Clone and configure
 
@@ -177,6 +178,40 @@ Expose your local server with ngrok:
 ngrok http 3000
 # Then configure the ngrok URL + /webhook in Meta Cloud API console
 ```
+
+If you are using Twilio, point the Sandbox/WhatsApp sender webhook to the same `/webhook` endpoint (Twilio sends `application/x-www-form-urlencoded` payloads which are handled automatically).
+
+---
+
+## WhatsApp Transport Modes
+
+KasiConnect can talk to WhatsApp through **Meta Cloud API** (default) or **Twilio**. Set `WHATSAPP_PROVIDER` in `backend/.env` to switch.
+
+| Provider | When to use | Required env vars | Webhook setup |
+|---|---|---|---|
+| `meta` (default) | Production deployments on your Meta Business Account | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_API_VERSION` | Meta Developers â†’ Webhooks â†’ Callback URL = `<base>/webhook`, Verify Token = `WHATSAPP_VERIFY_TOKEN` |
+| `twilio` | Internal demos + Twilio-hosted production | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM` | Twilio Console â†’ Messaging â†’ WhatsApp Sandbox (or sender) â†’ "When a message comes in" = `<base>/webhook` |
+
+### Twilio Sandbox flow (zero-cost demo)
+1. In Twilio Console, open **Messaging â†’ Try it out â†’ Send a WhatsApp message** and activate the Sandbox.
+2. Share the sandbox number and join code with testers (they text `join <code>` once).
+3. Configure `backend/.env`:
+   ```
+   WHATSAPP_PROVIDER=twilio
+   TWILIO_ACCOUNT_SID=ACXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+   TWILIO_AUTH_TOKEN=your_twilio_token
+   TWILIO_WHATSAPP_FROM=14155238886   # sandbox number
+   ```
+4. Point the sandbox webhook to `https://<ngrok>.ngrok.app/webhook`.
+5. Restart the backend. All outbound messages flow through Twilio; button/list prompts fall back to numbered text instructions so users can still reply with the option they want.
+
+### Twilio production hardening
+1. Request a dedicated WhatsApp number inside Twilio (Messaging â†’ WhatsApp â†’ Senders) and complete the WABA verification.
+2. Swap `TWILIO_WHATSAPP_FROM` to the new number (E.164, digits only) and remove the sandbox join step from your onboarding docs.
+3. Register your frequently-used templates in Twilio so you can message users outside the 24Â h service window when you go live.
+
+### Staying on Meta Cloud API
+Leave `WHATSAPP_PROVIDER=meta` (default) and keep the existing Meta webhook handshake. This remains the lowest-cost path once you control hosting and a verified phone number; you can switch between providers just by flipping the env vars and redeploying.
 
 ---
 
