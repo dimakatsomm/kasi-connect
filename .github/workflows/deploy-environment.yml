@@ -91,6 +91,7 @@ jobs:
           SWR_LOGIN_KEY=$(printf "%s" "swr.${HW_REGION}.myhuaweicloud.com" | \
             openssl dgst -binary -sha256 -hmac "${HW_SK}" | \
             od -An -vtx1 | sed 's/[ \n]//g')
+          echo "::add-mask::${SWR_LOGIN_KEY}"
           echo "swr_login_key=${SWR_LOGIN_KEY}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to Huawei SWR
