@@ -90,6 +90,18 @@ resource "huaweicloud_networking_secgroup_rule" "internal_pod_cidr" {
   remote_ip_prefix  = var.cce_pod_cidr
 }
 
+# Allow pod CIDR to reach RDS/data security group when using vpc-router mode.
+resource "huaweicloud_networking_secgroup_rule" "rds_from_pod_cidr" {
+  count             = var.cce_network_mode == "vpc-router" ? 1 : 0
+  security_group_id = huaweicloud_networking_secgroup.data.id
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = var.rds_port
+  port_range_max    = var.rds_port
+  remote_ip_prefix  = var.cce_pod_cidr
+}
+
 resource "huaweicloud_networking_secgroup_rule" "egress_all" {
   security_group_id = huaweicloud_networking_secgroup.platform.id
   direction         = "egress"
