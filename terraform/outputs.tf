@@ -13,6 +13,16 @@ output "security_group_id" {
   value       = huaweicloud_networking_secgroup.platform.id
 }
 
+output "data_security_group_id" {
+  description = "Dedicated security group for the RDS PostgreSQL data plane."
+  value       = huaweicloud_networking_secgroup.data.id
+}
+
+output "nat_gateway_eip" {
+  description = "Public IP of the NAT gateway used for CCE worker egress."
+  value       = huaweicloud_vpc_eip.nat.address
+}
+
 output "cce_cluster_id" {
   description = "CCE cluster hosting the backend + frontend workloads."
   value       = huaweicloud_cce_cluster.main.id

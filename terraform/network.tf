@@ -80,6 +80,16 @@ resource "huaweicloud_networking_secgroup_rule" "internal_full" {
   remote_ip_prefix  = var.vpc_cidr
 }
 
+# When using vpc-router network mode the pod CIDR may fall outside the VPC
+# CIDR, so we need an extra rule to allow pod-to-data-plane traffic.
+resource "huaweicloud_networking_secgroup_rule" "internal_pod_cidr" {
+  count             = var.cce_network_mode == "vpc-router" ? 1 : 0
+  security_group_id = huaweicloud_networking_secgroup.platform.id
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  remote_ip_prefix  = var.cce_pod_cidr
+}
+
 resource "huaweicloud_networking_secgroup_rule" "egress_all" {
   security_group_id = huaweicloud_networking_secgroup.platform.id
   direction         = "egress"
@@ -87,4 +97,36 @@ resource "huaweicloud_networking_secgroup_rule" "egress_all" {
   remote_ip_prefix  = "0.0.0.0/0"
 }
 
+# ── NAT gateway for CCE worker egress ─────────────────────────────────────────
+# CCE workers live in the private app subnet and need internet egress to pull
+# container images and receive OS/package updates. The NAT gateway sits in the
+# public subnet and routes outbound traffic through an Elastic IP.
 
+resource "huaweicloud_vpc_eip" "nat" {
+  publicip {
+    type = "5_bgp"
+  }
+
+  bandwidth {
+    name        = "${local.resource_prefix}-nat"
+    size        = var.nat_bandwidth_size
+    share_type  = "PER"
+    charge_mode = "traffic"
+  }
+
+  tags = local.tags
+}
+
+resource "huaweicloud_nat_gateway" "main" {
+  name      = "${local.resource_prefix}-nat"
+  spec      = "1"
+  vpc_id    = huaweicloud_vpc.main.id
+  subnet_id = huaweicloud_vpc_subnet.this["public"].id
+  tags      = local.tags
+}
+
+resource "huaweicloud_nat_snat_rule" "app_egress" {
+  nat_gateway_id = huaweicloud_nat_gateway.main.id
+  subnet_id      = huaweicloud_vpc_subnet.this["app"].id
+  floating_ip_id = huaweicloud_vpc_eip.nat.id
+}

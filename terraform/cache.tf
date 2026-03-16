@@ -17,7 +17,7 @@ resource "huaweicloud_dcs_instance" "redis" {
   vpc_id             = huaweicloud_vpc.main.id
   subnet_id          = huaweicloud_vpc_subnet.this["data"].id
   security_group_id  = huaweicloud_networking_secgroup.platform.id
-  availability_zones = [local.primary_az]
+  availability_zones = local.secondary_azs
   password           = local.redis_password
   maintain_begin     = var.dcs_maintain_begin
   maintain_end       = var.dcs_maintain_end

@@ -24,7 +24,7 @@ resource "huaweicloud_cce_node" "workers" {
   name              = format("%s-node-%02d", local.resource_prefix, each.value)
   flavor_id         = var.cce_node_flavor
   key_pair          = huaweicloud_compute_keypair.cce.name
-  availability_zone = element(local.resolved_azs, each.value % max(length(local.resolved_azs), 1))
+  availability_zone = length(local.resolved_azs) > 0 ? element(local.resolved_azs, each.value % length(local.resolved_azs)) : null
   labels = {
     role = "worker"
   }
