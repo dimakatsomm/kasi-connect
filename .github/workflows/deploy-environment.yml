@@ -1,0 +1,251 @@
+name: Deploy - Environment (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Target environment (staging or production)"
+        required: true
+        type: string
+    secrets:
+      HUAWEICLOUD_ACCESS_KEY:
+        required: true
+      HUAWEICLOUD_SECRET_KEY:
+        required: true
+      HUAWEICLOUD_REGION:
+        required: true
+      HUAWEICLOUD_PROJECT_ID:
+        required: true
+      SWR_ORGANIZATION:
+        required: true
+      CCE_CLUSTER_ID:
+        required: true
+      DB_HOST:
+        required: true
+      DB_PORT:
+        required: true
+      DB_NAME:
+        required: true
+      DB_USER:
+        required: true
+      DB_PASSWORD:
+        required: true
+      DATABASE_URL:
+        required: true
+      REDIS_HOST:
+        required: true
+      REDIS_PORT:
+        required: true
+      REDIS_PASSWORD:
+        required: false
+      KAFKA_BROKERS:
+        required: true
+      WHATSAPP_VERIFY_TOKEN:
+        required: true
+      WHATSAPP_ACCESS_TOKEN:
+        required: true
+      WHATSAPP_PHONE_NUMBER_ID:
+        required: true
+      OBS_BUCKET:
+        required: true
+      NEXT_PUBLIC_API_URL:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      HW_REGION: ${{ secrets.HUAWEICLOUD_REGION }}
+      HW_AK: ${{ secrets.HUAWEICLOUD_ACCESS_KEY }}
+      HW_SK: ${{ secrets.HUAWEICLOUD_SECRET_KEY }}
+      HW_PROJECT_ID: ${{ secrets.HUAWEICLOUD_PROJECT_ID }}
+      SWR_ORGANIZATION: ${{ secrets.SWR_ORGANIZATION }}
+      CCE_CLUSTER_ID: ${{ secrets.CCE_CLUSTER_ID }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure required secrets exist
+        shell: bash
+        run: |
+          : "${HW_AK:?HUAWEICLOUD_ACCESS_KEY is required}"
+          : "${HW_SK:?HUAWEICLOUD_SECRET_KEY is required}"
+          : "${HW_REGION:?HUAWEICLOUD_REGION is required}"
+          : "${HW_PROJECT_ID:?HUAWEICLOUD_PROJECT_ID is required}"
+          : "${SWR_ORGANIZATION:?SWR_ORGANIZATION is required}"
+          : "${CCE_CLUSTER_ID:?CCE_CLUSTER_ID is required for environment '${{ inputs.environment }}'}"
+
+      - name: Set image tag
+        id: image_tag
+        shell: bash
+        run: echo "tag=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute SWR login key
+        id: swr_key
+        shell: bash
+        run: |
+          SWR_LOGIN_KEY=$(printf "%s" "swr.${HW_REGION}.myhuaweicloud.com" | \
+            openssl dgst -binary -sha256 -hmac "${HW_SK}" | \
+            od -An -vtx1 | sed 's/[ \n]//g')
+          echo "swr_login_key=${SWR_LOGIN_KEY}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Huawei SWR
+        shell: bash
+        run: |
+          docker login \
+            --username "${HW_REGION}@${HW_AK}" \
+            --password "${{ steps.swr_key.outputs.swr_login_key }}" \
+            "swr.${HW_REGION}.myhuaweicloud.com"
+
+      - name: Build and push backend image
+        shell: bash
+        run: |
+          IMAGE="swr.${HW_REGION}.myhuaweicloud.com/${SWR_ORGANIZATION}/kasi-connect-backend:${{ steps.image_tag.outputs.tag }}"
+          docker build -t "${IMAGE}" ./backend
+          docker push "${IMAGE}"
+          echo "BACKEND_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+
+      - name: Build and push frontend image
+        shell: bash
+        run: |
+          IMAGE="swr.${HW_REGION}.myhuaweicloud.com/${SWR_ORGANIZATION}/kasi-connect-frontend:${{ steps.image_tag.outputs.tag }}"
+          docker build -t "${IMAGE}" ./frontend
+          docker push "${IMAGE}"
+          echo "FRONTEND_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig for CCE
+        shell: bash
+        run: |
+          # Obtain a temporary IAM token using AK/SK credentials
+          IAM_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "https://iam.${HW_REGION}.myhuaweicloud.com/v3/auth/tokens" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "auth": {
+                "identity": {
+                  "methods": ["credentials"],
+                  "credentials": {
+                    "access": "'"${HW_AK}"'",
+                    "secret": "'"${HW_SK}"'"
+                  }
+                },
+                "scope": {
+                  "project": {"id": "'"${HW_PROJECT_ID}"'"}
+                }
+              }
+            }' -i)
+
+          HTTP_CODE=$(echo "${IAM_RESPONSE}" | tail -1)
+          IAM_TOKEN=$(echo "${IAM_RESPONSE}" | grep -i "x-subject-token" | awk '{print $2}' | tr -d '\r')
+
+          if [ -z "${IAM_TOKEN}" ] || [ "${HTTP_CODE}" != "201" ]; then
+            echo "ERROR: Failed to obtain IAM token (HTTP ${HTTP_CODE}). Check HUAWEICLOUD_ACCESS_KEY and HUAWEICLOUD_SECRET_KEY."
+            exit 1
+          fi
+
+          # Fetch the cluster kubeconfig (duration=1 day)
+          mkdir -p "${HOME}/.kube"
+          CCE_RESPONSE=$(curl -s -w "\n%{http_code}" -X GET \
+            "https://cce.${HW_REGION}.myhuaweicloud.com/api/v3/projects/${HW_PROJECT_ID}/clusters/${CCE_CLUSTER_ID}/clustercert" \
+            -H "X-Auth-Token: ${IAM_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"duration": 1}')
+
+          CCE_HTTP_CODE=$(echo "${CCE_RESPONSE}" | tail -1)
+          CCE_BODY=$(echo "${CCE_RESPONSE}" | head -n -1)
+
+          if [ "${CCE_HTTP_CODE}" != "200" ]; then
+            echo "ERROR: Failed to fetch CCE cluster certificate (HTTP ${CCE_HTTP_CODE}): ${CCE_BODY}"
+            exit 1
+          fi
+
+          echo "${CCE_BODY}" | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          clusters = data.get('clusters')
+          users = data.get('users')
+          contexts = data.get('contexts')
+          if not clusters or not users or not contexts:
+              print('ERROR: Unexpected CCE API response: missing clusters, users, or contexts', file=sys.stderr)
+              sys.exit(1)
+          kubeconfig = {
+              'apiVersion': 'v1',
+              'kind': 'Config',
+              'clusters': clusters,
+              'users': users,
+              'contexts': contexts,
+              'current-context': contexts[0]['name']
+          }
+          print(json.dumps(kubeconfig))
+          " > "${HOME}/.kube/config"
+
+          kubectl cluster-info
+
+      - name: Create namespace
+        shell: bash
+        run: kubectl apply -f k8s/namespace.yaml
+
+      - name: Create SWR image pull secret
+        shell: bash
+        run: |
+          kubectl create secret docker-registry swr-secret \
+            --docker-server="swr.${HW_REGION}.myhuaweicloud.com" \
+            --docker-username="${HW_REGION}@${HW_AK}" \
+            --docker-password="${{ steps.swr_key.outputs.swr_login_key }}" \
+            --namespace=kasi-connect \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create backend secrets
+        shell: bash
+        run: |
+          kubectl create secret generic backend-secrets \
+            --namespace=kasi-connect \
+            --from-literal=DB_HOST="${{ secrets.DB_HOST }}" \
+            --from-literal=DB_PORT="${{ secrets.DB_PORT }}" \
+            --from-literal=DB_NAME="${{ secrets.DB_NAME }}" \
+            --from-literal=DB_USER="${{ secrets.DB_USER }}" \
+            --from-literal=DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+            --from-literal=DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            --from-literal=REDIS_HOST="${{ secrets.REDIS_HOST }}" \
+            --from-literal=REDIS_PORT="${{ secrets.REDIS_PORT }}" \
+            --from-literal=REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}" \
+            --from-literal=KAFKA_BROKERS="${{ secrets.KAFKA_BROKERS }}" \
+            --from-literal=WHATSAPP_VERIFY_TOKEN="${{ secrets.WHATSAPP_VERIFY_TOKEN }}" \
+            --from-literal=WHATSAPP_ACCESS_TOKEN="${{ secrets.WHATSAPP_ACCESS_TOKEN }}" \
+            --from-literal=WHATSAPP_PHONE_NUMBER_ID="${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}" \
+            --from-literal=OBS_ENDPOINT="https://obs.${HW_REGION}.myhuaweicloud.com" \
+            --from-literal=OBS_BUCKET="${{ secrets.OBS_BUCKET }}" \
+            --from-literal=OBS_ACCESS_KEY="${HW_AK}" \
+            --from-literal=OBS_SECRET_KEY="${HW_SK}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create frontend secrets
+        shell: bash
+        run: |
+          kubectl create secret generic frontend-secrets \
+            --namespace=kasi-connect \
+            --from-literal=NEXT_PUBLIC_API_URL="${{ secrets.NEXT_PUBLIC_API_URL }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy backend
+        shell: bash
+        run: |
+          sed "s|BACKEND_IMAGE|${BACKEND_IMAGE}|g" k8s/backend/deployment.yaml | \
+            kubectl apply -f -
+          kubectl apply -f k8s/backend/service.yaml
+          kubectl rollout status deployment/backend --namespace=kasi-connect --timeout=5m
+
+      - name: Deploy frontend
+        shell: bash
+        run: |
+          sed "s|FRONTEND_IMAGE|${FRONTEND_IMAGE}|g" k8s/frontend/deployment.yaml | \
+            kubectl apply -f -
+          kubectl apply -f k8s/frontend/service.yaml
+          kubectl rollout status deployment/frontend --namespace=kasi-connect --timeout=5m

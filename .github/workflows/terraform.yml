@@ -39,6 +39,7 @@ jobs:
       TF_VAR_region: ${{ secrets.HUAWEICLOUD_REGION }}
       TF_VAR_project_id: ${{ secrets.HUAWEICLOUD_PROJECT_ID }}
       TF_VAR_ssh_public_key: ${{ secrets.HUAWEICLOUD_SSH_PUBLIC_KEY }}
+      TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -51,6 +52,7 @@ jobs:
           : "${TF_VAR_ssh_public_key:?Set staging secret HUAWEICLOUD_SSH_PUBLIC_KEY}"
           : "${TF_VAR_region:?Add staging secret HUAWEICLOUD_REGION (region code)}"
           : "${TF_VAR_project_id:?Set staging secret HUAWEICLOUD_PROJECT_ID}"
+          : "${TF_STATE_BUCKET:?Set staging secret TF_STATE_BUCKET (OBS bucket for Terraform state)}"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -64,7 +66,14 @@ jobs:
 
       - name: Terraform init
         shell: bash
-        run: terraform init -backend=false
+        run: |
+          terraform init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=staging/terraform.tfstate" \
+            -backend-config="region=${TF_VAR_region}" \
+            -backend-config="endpoint=https://obs.${TF_VAR_region}.myhuaweicloud.com" \
+            -backend-config="access_key=${HUAWEICLOUD_ACCESS_KEY}" \
+            -backend-config="secret_key=${HUAWEICLOUD_SECRET_KEY}"
 
       - name: Terraform validate
         shell: bash
@@ -80,6 +89,20 @@ jobs:
           name: terraform-plan-staging
           path: terraform/tfplan
           retention-days: 7
+
+      - name: Terraform apply
+        shell: bash
+        run: terraform apply -auto-approve -input=false -no-color tfplan
+
+      - name: Terraform outputs
+        id: tf_outputs
+        shell: bash
+        run: |
+          CCE_CLUSTER_ID=$(terraform output -raw cce_cluster_id)
+          echo "cce_cluster_id=${CCE_CLUSTER_ID}" >> "$GITHUB_OUTPUT"
+
+    outputs:
+      cce_cluster_id: ${{ steps.tf_outputs.outputs.cce_cluster_id }}
 
   production:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
@@ -98,6 +121,7 @@ jobs:
       TF_VAR_region: ${{ secrets.HUAWEICLOUD_REGION }}
       TF_VAR_project_id: ${{ secrets.HUAWEICLOUD_PROJECT_ID }}
       TF_VAR_ssh_public_key: ${{ secrets.HUAWEICLOUD_SSH_PUBLIC_KEY }}
+      TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -110,6 +134,7 @@ jobs:
           : "${TF_VAR_ssh_public_key:?Set production secret HUAWEICLOUD_SSH_PUBLIC_KEY}"
           : "${TF_VAR_region:?Add production secret HUAWEICLOUD_REGION (region code)}"
           : "${TF_VAR_project_id:?Set production secret HUAWEICLOUD_PROJECT_ID}"
+          : "${TF_STATE_BUCKET:?Set production secret TF_STATE_BUCKET (OBS bucket for Terraform state)}"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -123,7 +148,14 @@ jobs:
 
       - name: Terraform init
         shell: bash
-        run: terraform init -backend=false
+        run: |
+          terraform init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=production/terraform.tfstate" \
+            -backend-config="region=${TF_VAR_region}" \
+            -backend-config="endpoint=https://obs.${TF_VAR_region}.myhuaweicloud.com" \
+            -backend-config="access_key=${HUAWEICLOUD_ACCESS_KEY}" \
+            -backend-config="secret_key=${HUAWEICLOUD_SECRET_KEY}"
 
       - name: Terraform validate
         shell: bash
@@ -139,3 +171,17 @@ jobs:
           name: terraform-plan-production
           path: terraform/tfplan
           retention-days: 7
+
+      - name: Terraform apply
+        shell: bash
+        run: terraform apply -auto-approve -input=false -no-color tfplan
+
+      - name: Terraform outputs
+        id: tf_outputs
+        shell: bash
+        run: |
+          CCE_CLUSTER_ID=$(terraform output -raw cce_cluster_id)
+          echo "cce_cluster_id=${CCE_CLUSTER_ID}" >> "$GITHUB_OUTPUT"
+
+    outputs:
+      cce_cluster_id: ${{ steps.tf_outputs.outputs.cce_cluster_id }}

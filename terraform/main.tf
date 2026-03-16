@@ -1,6 +1,15 @@
 terraform {
   required_version = ">= 1.6.0"
 
+  backend "s3" {
+    # All connection values are supplied at init time via -backend-config flags
+    # so no sensitive data lives in source control.
+    skip_credentials_validation = true
+    skip_metadata_api_check     = true
+    skip_region_validation      = true
+    force_path_style            = true
+  }
+
   required_providers {
     huaweicloud = {
       source  = "huaweicloud/huaweicloud"
