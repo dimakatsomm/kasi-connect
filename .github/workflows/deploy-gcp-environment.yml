@@ -7,6 +7,10 @@ on:
         description: Target environment (demo, staging, or production)
         required: true
         type: string
+      gke_cluster_name:
+        description: GKE cluster name
+        required: true
+        type: string
     secrets:
       GCP_PROJECT_ID:
         required: true
@@ -67,7 +71,7 @@ jobs:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_REGION: ${{ secrets.GCP_REGION }}
       GAR_REPOSITORY: ${{ secrets.GAR_REPOSITORY }}
-      GKE_CLUSTER_NAME: kasi-connect-demo-gke
+      GKE_CLUSTER_NAME: ${{ inputs.gke_cluster_name }}
       NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
       GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
     steps:
