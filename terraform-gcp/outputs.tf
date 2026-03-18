@@ -69,3 +69,14 @@ output "gke_cluster_region" {
   description = "Region where the GKE cluster runs."
   value       = google_container_cluster.primary.location
 }
+
+output "artifact_registry_repository" {
+  description = "GAR repository name — set this as the GAR_REPOSITORY GitHub secret."
+  value       = google_artifact_registry_repository.images.repository_id
+}
+
+output "cicd_sa_key_json" {
+  description = "Base64-encoded JSON key for the CI/CD service account — set as GCP_SA_KEY_JSON GitHub secret."
+  value       = google_service_account_key.cicd.private_key
+  sensitive   = true
+}

@@ -143,3 +143,8 @@ terraform/.terraform/
 terraform/.terraform.lock.hcl
 terraform/tfplan
 terraform/terraform.tfvars
+terraform-gcp/.terraform/
+terraform-gcp/.terraform.lock.hcl
+terraform-gcp/tfplan
+terraform-gcp/terraform.tfvars
+
