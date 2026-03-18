@@ -1,6 +1,6 @@
 locals {
   normalized_additional_labels = { for k, v in var.additional_labels : lower(k) => v }
-  resource_prefix = lower(replace("${var.project_name}-${var.environment}", "/[^a-z0-9-]/", ""))
+  resource_prefix              = lower(replace("${var.project_name}-${var.environment}", "/[^a-z0-9-]/", ""))
   labels = merge({
     project     = lower(var.project_name)
     environment = lower(var.environment)

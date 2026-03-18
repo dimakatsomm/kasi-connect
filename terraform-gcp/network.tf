@@ -80,11 +80,11 @@ resource "google_compute_router" "main" {
 }
 
 resource "google_compute_router_nat" "gke" {
-  name                               = "${local.resource_prefix}-nat"
-  router                             = google_compute_router.main.name
-  region                             = var.region
-  nat_ip_allocate_option             = "AUTO_ONLY"
-  min_ports_per_vm                   = var.nat_min_ports_per_vm
+  name                                = "${local.resource_prefix}-nat"
+  router                              = google_compute_router.main.name
+  region                              = var.region
+  nat_ip_allocate_option              = "AUTO_ONLY"
+  min_ports_per_vm                    = var.nat_min_ports_per_vm
   enable_endpoint_independent_mapping = true
 
   subnetwork {
