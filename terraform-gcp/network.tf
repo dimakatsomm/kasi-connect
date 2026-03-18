@@ -84,6 +84,7 @@ resource "google_compute_router_nat" "gke" {
   router                              = google_compute_router.main.name
   region                              = var.region
   nat_ip_allocate_option              = "AUTO_ONLY"
+  source_subnetwork_ip_ranges_to_nat  = "LIST_OF_SUBNETWORKS"
   min_ports_per_vm                    = var.nat_min_ports_per_vm
   enable_endpoint_independent_mapping = true
 
