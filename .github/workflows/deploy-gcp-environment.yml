@@ -1,0 +1,236 @@
+name: Deploy - GCP Environment (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Target environment (demo, staging, or production)
+        required: true
+        type: string
+    secrets:
+      GCP_PROJECT_ID:
+        required: true
+      GCP_REGION:
+        required: true
+      GCP_SA_KEY_JSON:
+        required: true
+      GAR_REPOSITORY:
+        required: true
+      DB_HOST:
+        required: true
+      DB_PORT:
+        required: true
+      DB_NAME:
+        required: true
+      DB_USER:
+        required: true
+      DB_PASSWORD:
+        required: true
+      DATABASE_URL:
+        required: true
+      REDIS_HOST:
+        required: true
+      REDIS_PORT:
+        required: true
+      REDIS_PASSWORD:
+        required: false
+      KAFKA_BROKERS:
+        required: true
+      NEXT_PUBLIC_API_URL:
+        required: true
+      WHATSAPP_PROVIDER:
+        required: false
+      WHATSAPP_VERIFY_TOKEN:
+        required: false
+      WHATSAPP_ACCESS_TOKEN:
+        required: false
+      WHATSAPP_PHONE_NUMBER_ID:
+        required: false
+      TWILIO_ACCOUNT_SID:
+        required: false
+      TWILIO_AUTH_TOKEN:
+        required: false
+      TWILIO_WHATSAPP_FROM:
+        required: false
+      OBS_BUCKET:
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ secrets.GCP_REGION }}
+      GAR_REPOSITORY: ${{ secrets.GAR_REPOSITORY }}
+      GKE_CLUSTER_NAME: kasi-connect-demo-gke
+      NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+      GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure required secrets exist
+        shell: bash
+        run: |
+          : "${GCP_PROJECT_ID:?GCP_PROJECT_ID is required}"
+          : "${GCP_REGION:?GCP_REGION is required}"
+          : "${GAR_REPOSITORY:?GAR_REPOSITORY is required}"
+          : "${GKE_CLUSTER_NAME:?GKE_CLUSTER_NAME is required}"
+          : "${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required for frontend build}"
+          : "${GCP_SA_KEY_JSON:?GCP_SA_KEY_JSON is required}"
+
+          WHATSAPP_PROVIDER_VALUE="${{ secrets.WHATSAPP_PROVIDER }}"
+          if [ -z "${WHATSAPP_PROVIDER_VALUE}" ]; then
+            WHATSAPP_PROVIDER_VALUE="meta"
+          fi
+          echo "WHATSAPP_PROVIDER=${WHATSAPP_PROVIDER_VALUE}" >> "$GITHUB_ENV"
+
+          if [ "${WHATSAPP_PROVIDER_VALUE}" = "twilio" ]; then
+            if [ -z "${{ secrets.TWILIO_ACCOUNT_SID }}" ] || [ -z "${{ secrets.TWILIO_AUTH_TOKEN }}" ] || [ -z "${{ secrets.TWILIO_WHATSAPP_FROM }}" ]; then
+              echo "ERROR: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_WHATSAPP_FROM secrets must be set when WHATSAPP_PROVIDER=twilio"
+              exit 1
+            fi
+          else
+            if [ -z "${{ secrets.WHATSAPP_VERIFY_TOKEN }}" ] || [ -z "${{ secrets.WHATSAPP_ACCESS_TOKEN }}" ] || [ -z "${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}" ]; then
+              echo "ERROR: WHATSAPP_VERIFY_TOKEN, WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID secrets must be set when WHATSAPP_PROVIDER=meta (default)"
+              exit 1
+            fi
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ env.GCP_SA_KEY_JSON }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GAR
+        shell: bash
+        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      - name: Set image tag
+        id: image_tag
+        shell: bash
+        run: echo "tag=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push backend image
+        shell: bash
+        run: |
+          IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GAR_REPOSITORY}/kasi-connect-backend:${{ steps.image_tag.outputs.tag }}"
+          docker build -t "${IMAGE}" ./backend
+          docker push "${IMAGE}"
+          echo "BACKEND_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+
+      - name: Build and push frontend image
+        shell: bash
+        run: |
+          IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GAR_REPOSITORY}/kasi-connect-frontend:${{ steps.image_tag.outputs.tag }}"
+          docker build --build-arg NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL}" -t "${IMAGE}" ./frontend
+          docker push "${IMAGE}"
+          echo "FRONTEND_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Configure kubeconfig for GKE
+        shell: bash
+        run: |
+          gcloud container clusters get-credentials "${GKE_CLUSTER_NAME}" \
+            --region "${GCP_REGION}" \
+            --project "${GCP_PROJECT_ID}"
+
+          kubectl cluster-info
+
+      - name: Create namespace
+        shell: bash
+        run: kubectl apply -f k8s/namespace.yaml
+
+      - name: Deploy Kafka (in-cluster, bitnami)
+        shell: bash
+        run: |
+          helm repo add bitnami https://charts.bitnami.com/bitnami --force-update
+          helm upgrade --install kafka bitnami/kafka \
+            --namespace messaging --create-namespace \
+            --set replicaCount=1 \
+            --set zookeeper.replicaCount=1 \
+            --set persistence.enabled=false \
+            --set zookeeper.persistence.enabled=false \
+            --wait --timeout 5m
+          # Default to in-cluster broker unless caller already provided a value.
+          if [ -z "${{ secrets.KAFKA_BROKERS }}" ]; then
+            echo "KAFKA_BROKERS_EFFECTIVE=kafka-headless.messaging.svc.cluster.local:9092" >> "$GITHUB_ENV"
+          else
+            echo "KAFKA_BROKERS_EFFECTIVE=${{ secrets.KAFKA_BROKERS }}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Create image pull secret
+        shell: bash
+        run: |
+          ACCESS_TOKEN="$(gcloud auth print-access-token)"
+          kubectl create secret docker-registry swr-secret \
+            --docker-server="${GCP_REGION}-docker.pkg.dev" \
+            --docker-username="oauth2accesstoken" \
+            --docker-password="${ACCESS_TOKEN}" \
+            --namespace=kasi-connect \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create backend secrets
+        shell: bash
+        run: |
+          kubectl create secret generic backend-secrets \
+            --namespace=kasi-connect \
+            --from-literal=DB_HOST="${{ secrets.DB_HOST }}" \
+            --from-literal=DB_PORT="${{ secrets.DB_PORT }}" \
+            --from-literal=DB_NAME="${{ secrets.DB_NAME }}" \
+            --from-literal=DB_USER="${{ secrets.DB_USER }}" \
+            --from-literal=DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+            --from-literal=DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            --from-literal=REDIS_HOST="${{ secrets.REDIS_HOST }}" \
+            --from-literal=REDIS_PORT="${{ secrets.REDIS_PORT }}" \
+            --from-literal=REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}" \
+            --from-literal=KAFKA_BROKERS="${KAFKA_BROKERS_EFFECTIVE}" \
+            --from-literal=WHATSAPP_PROVIDER="${WHATSAPP_PROVIDER:-meta}" \
+            --from-literal=WHATSAPP_VERIFY_TOKEN="${{ secrets.WHATSAPP_VERIFY_TOKEN }}" \
+            --from-literal=WHATSAPP_ACCESS_TOKEN="${{ secrets.WHATSAPP_ACCESS_TOKEN }}" \
+            --from-literal=WHATSAPP_PHONE_NUMBER_ID="${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}" \
+            --from-literal=TWILIO_ACCOUNT_SID="${{ secrets.TWILIO_ACCOUNT_SID }}" \
+            --from-literal=TWILIO_AUTH_TOKEN="${{ secrets.TWILIO_AUTH_TOKEN }}" \
+            --from-literal=TWILIO_WHATSAPP_FROM="${{ secrets.TWILIO_WHATSAPP_FROM }}" \
+            --from-literal=OBS_ENDPOINT="" \
+            --from-literal=OBS_BUCKET="${{ secrets.OBS_BUCKET }}" \
+            --from-literal=OBS_ACCESS_KEY="" \
+            --from-literal=OBS_SECRET_KEY="" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create frontend secrets
+        shell: bash
+        run: |
+          kubectl create secret generic frontend-secrets \
+            --namespace=kasi-connect \
+            --from-literal=NEXT_PUBLIC_API_URL="${{ secrets.NEXT_PUBLIC_API_URL }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy backend
+        shell: bash
+        run: |
+          sed "s|BACKEND_IMAGE|${BACKEND_IMAGE}|g" k8s/backend/deployment.yaml | \
+            kubectl apply -f -
+          kubectl apply -f k8s/backend/service.yaml
+          kubectl rollout status deployment/backend --namespace=kasi-connect --timeout=5m
+
+      - name: Deploy frontend
+        shell: bash
+        run: |
+          sed "s|FRONTEND_IMAGE|${FRONTEND_IMAGE}|g" k8s/frontend/deployment.yaml | \
+            kubectl apply -f -
+          kubectl apply -f k8s/frontend/service.yaml
+          kubectl rollout status deployment/frontend --namespace=kasi-connect --timeout=5m
