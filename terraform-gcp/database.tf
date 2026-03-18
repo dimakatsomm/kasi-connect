@@ -20,6 +20,8 @@ resource "google_service_networking_connection" "private_vpc_connection" {
   network                 = google_compute_network.main.id
   service                 = "servicenetworking.googleapis.com"
   reserved_peering_ranges = [google_compute_global_address.sql_private_ip.name]
+
+  depends_on = [google_project_service.servicenetworking]
 }
 
 resource "google_sql_database_instance" "postgres" {
@@ -49,7 +51,10 @@ resource "google_sql_database_instance" "postgres" {
 
   deletion_protection = var.db_enable_deletion_protection
 
-  depends_on = [google_service_networking_connection.private_vpc_connection]
+  depends_on = [
+    google_service_networking_connection.private_vpc_connection,
+    google_project_service.sqladmin,
+  ]
 }
 
 resource "google_sql_database" "app" {

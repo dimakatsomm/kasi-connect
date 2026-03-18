@@ -3,6 +3,8 @@ resource "google_compute_network" "main" {
   auto_create_subnetworks = false
   description             = "KasiConnect demo network"
   routing_mode            = "REGIONAL"
+
+  depends_on = [google_project_service.compute]
 }
 
 resource "google_compute_subnetwork" "public" {

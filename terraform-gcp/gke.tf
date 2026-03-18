@@ -1,6 +1,8 @@
 resource "google_service_account" "gke_nodes" {
   account_id   = "${local.resource_prefix}-gke"
   display_name = "${local.resource_prefix}-gke-nodes"
+
+  depends_on = [google_project_service.iam]
 }
 
 resource "google_project_iam_member" "gke_logging" {
@@ -77,7 +79,8 @@ resource "google_container_cluster" "primary" {
     google_compute_router_nat.gke,
     google_project_iam_member.gke_logging,
     google_project_iam_member.gke_monitoring,
-    google_project_iam_member.gke_resource_metadata
+    google_project_iam_member.gke_resource_metadata,
+    google_project_service.container,
   ]
 }
 

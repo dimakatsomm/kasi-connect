@@ -9,4 +9,6 @@ resource "google_storage_bucket" "assets" {
   force_destroy               = var.bucket_force_destroy
 
   labels = local.labels
+
+  depends_on = [google_project_service.storage]
 }

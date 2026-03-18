@@ -18,4 +18,6 @@ resource "google_redis_instance" "cache" {
       }
     }
   }
+
+  depends_on = [google_project_service.redis]
 }
