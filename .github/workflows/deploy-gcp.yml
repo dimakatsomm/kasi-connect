@@ -34,6 +34,10 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: deploy-gcp-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
 jobs:
   demo:
     if: |
