@@ -41,6 +41,14 @@ resource "google_project_iam_member" "cicd_gke_developer" {
   member  = "serviceAccount:${google_service_account.cicd.email}"
 }
 
+# Terraform itself runs as this SA in CI — it needs to create/modify all
+# infrastructure resources (VPC, GKE, Cloud SQL, Redis, IAM, etc.).
+resource "google_project_iam_member" "cicd_owner" {
+  project = var.project_id
+  role    = "roles/owner"
+  member  = "serviceAccount:${google_service_account.cicd.email}"
+}
+
 resource "google_service_account_key" "cicd" {
   service_account_id = google_service_account.cicd.name
 }

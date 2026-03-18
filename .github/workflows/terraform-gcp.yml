@@ -83,6 +83,16 @@ jobs:
           }
           EOF
 
+      - name: Ensure Terraform state bucket exists
+        shell: bash
+        run: |
+          gcloud storage buckets describe "gs://${TF_STATE_BUCKET_GCP}" \
+            --project="${TF_VAR_project_id}" 2>/dev/null || \
+          gcloud storage buckets create "gs://${TF_STATE_BUCKET_GCP}" \
+            --project="${TF_VAR_project_id}" \
+            --location="${GCP_REGION}" \
+            --uniform-bucket-level-access
+
       - name: Terraform init
         shell: bash
         run: |
@@ -168,6 +178,16 @@ jobs:
             backend "gcs" {}
           }
           EOF
+
+      - name: Ensure Terraform state bucket exists
+        shell: bash
+        run: |
+          gcloud storage buckets describe "gs://${TF_STATE_BUCKET_GCP}" \
+            --project="${TF_VAR_project_id}" 2>/dev/null || \
+          gcloud storage buckets create "gs://${TF_STATE_BUCKET_GCP}" \
+            --project="${TF_VAR_project_id}" \
+            --location="${GCP_REGION}" \
+            --uniform-bucket-level-access
 
       - name: Terraform init
         shell: bash

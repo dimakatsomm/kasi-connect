@@ -76,7 +76,7 @@ output "artifact_registry_repository" {
 }
 
 output "cicd_sa_key_json" {
-  description = "Base64-encoded JSON key for the CI/CD service account — set as GCP_SA_KEY_JSON GitHub secret."
-  value       = google_service_account_key.cicd.private_key
+  description = "Raw JSON key for the CI/CD service account — set as GCP_SA_KEY_JSON GitHub secret."
+  value       = base64decode(google_service_account_key.cicd.private_key)
   sensitive   = true
 }

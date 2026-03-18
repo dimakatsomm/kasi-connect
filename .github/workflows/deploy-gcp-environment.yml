@@ -142,6 +142,9 @@ jobs:
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
 
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
       - name: Configure kubeconfig for GKE
         shell: bash
         run: |
@@ -154,6 +157,24 @@ jobs:
       - name: Create namespace
         shell: bash
         run: kubectl apply -f k8s/namespace.yaml
+
+      - name: Deploy Kafka (in-cluster, bitnami)
+        shell: bash
+        run: |
+          helm repo add bitnami https://charts.bitnami.com/bitnami --force-update
+          helm upgrade --install kafka bitnami/kafka \
+            --namespace messaging --create-namespace \
+            --set replicaCount=1 \
+            --set zookeeper.replicaCount=1 \
+            --set persistence.enabled=false \
+            --set zookeeper.persistence.enabled=false \
+            --wait --timeout 5m
+          # Default to in-cluster broker unless caller already provided a value.
+          if [ -z "${{ secrets.KAFKA_BROKERS }}" ]; then
+            echo "KAFKA_BROKERS_EFFECTIVE=kafka-headless.messaging.svc.cluster.local:9092" >> "$GITHUB_ENV"
+          else
+            echo "KAFKA_BROKERS_EFFECTIVE=${{ secrets.KAFKA_BROKERS }}" >> "$GITHUB_ENV"
+          fi
 
       - name: Create image pull secret
         shell: bash
@@ -180,7 +201,7 @@ jobs:
             --from-literal=REDIS_HOST="${{ secrets.REDIS_HOST }}" \
             --from-literal=REDIS_PORT="${{ secrets.REDIS_PORT }}" \
             --from-literal=REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}" \
-            --from-literal=KAFKA_BROKERS="${{ secrets.KAFKA_BROKERS }}" \
+            --from-literal=KAFKA_BROKERS="${KAFKA_BROKERS_EFFECTIVE}" \
             --from-literal=WHATSAPP_PROVIDER="${WHATSAPP_PROVIDER:-meta}" \
             --from-literal=WHATSAPP_VERIFY_TOKEN="${{ secrets.WHATSAPP_VERIFY_TOKEN }}" \
             --from-literal=WHATSAPP_ACCESS_TOKEN="${{ secrets.WHATSAPP_ACCESS_TOKEN }}" \
