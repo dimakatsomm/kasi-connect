@@ -117,6 +117,15 @@ Sessions expire after **30 minutes** of inactivity (Redis TTL).
 | Containers | Docker / Docker Compose |
 | Deployment | Huawei CCE (Kubernetes) |
 
+## Cloud deployment stacks
+
+| Cloud | Terraform path | Notes |
+| --- | --- | --- |
+| Huawei Cloud | `terraform/` | Original stack that targets CCE, GaussDB, DCS, DMS, and OBS. |
+| Google Cloud | `terraform-gcp/` | Demo-focused stack that provisions GKE, Cloud SQL, Memorystore, GCS, and expects Kafka via a Helm release. |
+
+> Use the Huawei stack for production once the account is approved. For interim demos, follow [`terraform-gcp/README.md`](terraform-gcp/README.md) to spin everything up on GCP and install a single-node Kafka inside the cluster.
+
 ---
 
 ## Getting Started
@@ -317,3 +326,7 @@ Key variables:
 ## License
 
 MIT
+
+
+
+
