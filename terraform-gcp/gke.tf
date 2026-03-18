@@ -31,7 +31,6 @@ resource "google_container_cluster" "primary" {
   initial_node_count       = 1
   network                  = google_compute_network.main.id
   subnetwork               = google_compute_subnetwork.app.name
-  min_master_version       = var.kubernetes_version
   networking_mode          = "VPC_NATIVE"
   resource_labels          = local.labels
 

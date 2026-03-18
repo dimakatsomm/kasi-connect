@@ -5,7 +5,6 @@ project_name       = "kasi-connect"
 trusted_cidrs      = ["0.0.0.0/0"]
 http_ingress_cidrs = ["0.0.0.0/0"]
 
-kubernetes_version = "1.29"
 gke_machine_type   = "e2-standard-4"
 gke_min_node_count = 2
 gke_max_node_count = 4

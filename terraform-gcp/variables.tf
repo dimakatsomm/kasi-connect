@@ -63,12 +63,6 @@ variable "http_ingress_cidrs" {
   default     = ["0.0.0.0/0"]
 }
 
-variable "kubernetes_version" {
-  description = "Desired GKE minor version (for example 1.29)."
-  type        = string
-  default     = "1.29"
-}
-
 variable "gke_release_channel" {
   description = "GKE release channel (RAPID, REGULAR, STABLE)."
   type        = string
