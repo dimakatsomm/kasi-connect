@@ -135,7 +135,10 @@ jobs:
             }
           }
           output "cloud_sql"      { value = data.terraform_remote_state.infra.outputs.cloud_sql }
-          output "db_credentials" { value = data.terraform_remote_state.infra.outputs.db_credentials sensitive = true }
+          output "db_credentials" {
+            value     = data.terraform_remote_state.infra.outputs.db_credentials
+            sensitive = true
+          }
           output "redis"          { value = data.terraform_remote_state.infra.outputs.redis }
           output "asset_bucket"   { value = data.terraform_remote_state.infra.outputs.asset_bucket }
           output "gke_cluster"    { value = data.terraform_remote_state.infra.outputs.gke_cluster }
