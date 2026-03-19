@@ -228,7 +228,13 @@ jobs:
           sed "s|BACKEND_IMAGE|${BACKEND_IMAGE}|g" k8s/backend/deployment.yaml | \
             kubectl apply -f -
           kubectl apply -f k8s/backend/service.yaml
-          kubectl rollout status deployment/backend --namespace=kasi-connect --timeout=5m
+          if ! kubectl rollout status deployment/backend --namespace=kasi-connect --timeout=8m; then
+            echo "--- Backend rollout failed. Dumping pod info for debugging ---"
+            kubectl get pods -n kasi-connect -l app=backend -o wide
+            kubectl describe pods -n kasi-connect -l app=backend
+            kubectl logs -n kasi-connect -l app=backend --tail=80 || true
+            exit 1
+          fi
 
       - name: Discover backend external URL
         id: backend_url
