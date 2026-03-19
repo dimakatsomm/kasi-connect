@@ -155,21 +155,27 @@ jobs:
           # Remove stale release whose StatefulSet spec may conflict with new values
           if helm status kafka --namespace messaging &>/dev/null; then
             helm uninstall kafka --namespace messaging --wait --timeout 2m || true
-            # Wait for pods to fully terminate before reinstalling
             kubectl wait --for=delete pod -l app.kubernetes.io/name=kafka \
               --namespace messaging --timeout=60s 2>/dev/null || true
           fi
-          helm install kafka bitnami/kafka \
+          helm upgrade --install kafka bitnami/kafka \
             --namespace messaging --create-namespace \
             --set controller.replicaCount=1 \
             --set controller.persistence.enabled=false \
-            --set controller.resources.requests.cpu=250m \
+            --set controller.resources.requests.cpu=200m \
             --set controller.resources.requests.memory=256Mi \
-            --set controller.resources.limits.cpu=500m \
-            --set controller.resources.limits.memory=512Mi \
+            --set controller.resources.limits.cpu=1 \
+            --set controller.resources.limits.memory=1Gi \
+            --set controller.heapOpts="-Xmx384m -Xms384m" \
             --set broker.replicaCount=0 \
             --set listeners.client.protocol=PLAINTEXT \
-            --wait --timeout 10m
+            --timeout 10m
+          # Don't --wait; Kafka may take a while to start and the backend
+          # reconnects automatically. Give it a best-effort check instead.
+          echo "Waiting up to 3 min for Kafka pod to become ready..."
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=kafka \
+            --namespace messaging --timeout=180s || \
+            echo "WARNING: Kafka not ready yet — backend will reconnect automatically"
           # Default to in-cluster broker unless caller already provided a value.
           if [ -z "${{ secrets.KAFKA_BROKERS }}" ]; then
             echo "KAFKA_BROKERS_EFFECTIVE=kafka.messaging.svc.cluster.local:9092" >> "$GITHUB_ENV"
