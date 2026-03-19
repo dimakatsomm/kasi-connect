@@ -48,6 +48,8 @@ jobs:
       GCP_REGION: ${{ secrets.GCP_REGION }}
       GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
       GAR_REPOSITORY: ${{ secrets.GAR_REPOSITORY }}
+      TF_STATE_BUCKET_GCP: ${{ secrets.TF_STATE_BUCKET_GCP }}
+      TF_STATE_PREFIX_GCP: ${{ secrets.TF_STATE_PREFIX_GCP }}
       DB_HOST: ${{ secrets.DB_HOST }}
       DB_PORT: ${{ secrets.DB_PORT }}
       DB_NAME: ${{ secrets.DB_NAME }}
@@ -81,6 +83,8 @@ jobs:
       GCP_REGION: ${{ secrets.GCP_REGION }}
       GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
       GAR_REPOSITORY: ${{ secrets.GAR_REPOSITORY }}
+      TF_STATE_BUCKET_GCP: ${{ secrets.TF_STATE_BUCKET_GCP }}
+      TF_STATE_PREFIX_GCP: ${{ secrets.TF_STATE_PREFIX_GCP }}
       DB_HOST: ${{ secrets.DB_HOST }}
       DB_PORT: ${{ secrets.DB_PORT }}
       DB_NAME: ${{ secrets.DB_NAME }}

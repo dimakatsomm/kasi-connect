@@ -18,26 +18,30 @@ on:
         required: true
       GAR_REPOSITORY:
         required: true
+      TF_STATE_BUCKET_GCP:
+        required: true
+      TF_STATE_PREFIX_GCP:
+        required: false
       DB_HOST:
-        required: true
+        required: false
       DB_PORT:
-        required: true
+        required: false
       DB_NAME:
-        required: true
+        required: false
       DB_USER:
-        required: true
+        required: false
       DB_PASSWORD:
-        required: true
+        required: false
       DATABASE_URL:
         required: false
       REDIS_HOST:
-        required: true
+        required: false
       REDIS_PORT:
-        required: true
+        required: false
       REDIS_PASSWORD:
         required: false
       KAFKA_BROKERS:
-        required: true
+        required: false
       WHATSAPP_PROVIDER:
         required: false
       WHATSAPP_VERIFY_TOKEN:
@@ -53,7 +57,7 @@ on:
       TWILIO_WHATSAPP_FROM:
         required: false
       OBS_BUCKET:
-        required: true
+        required: false
 
 permissions:
   contents: read
@@ -107,6 +111,75 @@ jobs:
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
+
+      - name: Read infrastructure outputs from Terraform state
+        id: tf_outputs
+        shell: bash
+        run: |
+          # Install Terraform to read outputs from remote state
+          wget -qO- https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_linux_amd64.zip \
+            | funzip > /usr/local/bin/terraform && chmod +x /usr/local/bin/terraform
+
+          TF_PREFIX="${{ secrets.TF_STATE_PREFIX_GCP }}"
+          if [ -z "${TF_PREFIX}" ]; then TF_PREFIX="kasi-connect"; fi
+          ENV_SUFFIX="${{ inputs.environment }}"
+
+          # Create a minimal TF config that reads remote state
+          TMPDIR=$(mktemp -d)
+          cat > "${TMPDIR}/main.tf" <<EOF
+          data "terraform_remote_state" "infra" {
+            backend = "gcs"
+            config = {
+              bucket = "${{ secrets.TF_STATE_BUCKET_GCP }}"
+              prefix = "${TF_PREFIX}/${ENV_SUFFIX}"
+            }
+          }
+          output "cloud_sql"      { value = data.terraform_remote_state.infra.outputs.cloud_sql }
+          output "db_credentials" { value = data.terraform_remote_state.infra.outputs.db_credentials sensitive = true }
+          output "redis"          { value = data.terraform_remote_state.infra.outputs.redis }
+          output "asset_bucket"   { value = data.terraform_remote_state.infra.outputs.asset_bucket }
+          output "gke_cluster"    { value = data.terraform_remote_state.infra.outputs.gke_cluster }
+          EOF
+
+          cd "${TMPDIR}"
+          terraform init -input=false -no-color
+          terraform refresh -input=false -no-color
+
+          # Extract values (secrets fallback → TF output)
+          TF_DB_HOST=$(terraform output -json cloud_sql | jq -r '.private_ip')
+          TF_DB_NAME=$(terraform output -json cloud_sql | jq -r '.database')
+          TF_DB_USER=$(terraform output -json db_credentials | jq -r '.user')
+          TF_DB_PASS=$(terraform output -json db_credentials | jq -r '.password')
+          TF_REDIS_HOST=$(terraform output -json redis | jq -r '.host')
+          TF_REDIS_PORT=$(terraform output -json redis | jq -r '.port')
+          TF_ASSET_BUCKET=$(terraform output -raw asset_bucket)
+
+          # Use secret if set, otherwise use Terraform output
+          DB_HOST="${{ secrets.DB_HOST }}";      [ -z "${DB_HOST}" ]      && DB_HOST="${TF_DB_HOST}"
+          DB_PORT="${{ secrets.DB_PORT }}";      [ -z "${DB_PORT}" ]      && DB_PORT="5432"
+          DB_NAME="${{ secrets.DB_NAME }}";      [ -z "${DB_NAME}" ]      && DB_NAME="${TF_DB_NAME}"
+          DB_USER="${{ secrets.DB_USER }}";      [ -z "${DB_USER}" ]      && DB_USER="${TF_DB_USER}"
+          DB_PASSWORD="${{ secrets.DB_PASSWORD }}"; [ -z "${DB_PASSWORD}" ] && DB_PASSWORD="${TF_DB_PASS}"
+          REDIS_HOST="${{ secrets.REDIS_HOST }}";  [ -z "${REDIS_HOST}" ]  && REDIS_HOST="${TF_REDIS_HOST}"
+          REDIS_PORT="${{ secrets.REDIS_PORT }}";  [ -z "${REDIS_PORT}" ]  && REDIS_PORT="${TF_REDIS_PORT}"
+          OBS_BUCKET="${{ secrets.OBS_BUCKET }}";  [ -z "${OBS_BUCKET}" ]  && OBS_BUCKET="${TF_ASSET_BUCKET}"
+
+          # Mask sensitive values
+          echo "::add-mask::${DB_PASSWORD}"
+
+          # Export to GITHUB_OUTPUT for downstream steps
+          {
+            echo "db_host=${DB_HOST}"
+            echo "db_port=${DB_PORT}"
+            echo "db_name=${DB_NAME}"
+            echo "db_user=${DB_USER}"
+            echo "db_password=${DB_PASSWORD}"
+            echo "redis_host=${REDIS_HOST}"
+            echo "redis_port=${REDIS_PORT}"
+            echo "obs_bucket=${OBS_BUCKET}"
+          } >> "$GITHUB_OUTPUT"
+
+          rm -rf "${TMPDIR}"
 
       - name: Configure Docker for GAR
         shell: bash
@@ -186,21 +259,21 @@ jobs:
       - name: Create backend secrets
         shell: bash
         run: |
-          # Build DATABASE_URL from individual DB secrets if not explicitly provided
+          # Build DATABASE_URL from individual DB values if not explicitly provided
           DATABASE_URL="${{ secrets.DATABASE_URL }}"
           if [ -z "${DATABASE_URL}" ]; then
-            DATABASE_URL="postgresql://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@${{ secrets.DB_HOST }}:${{ secrets.DB_PORT }}/${{ secrets.DB_NAME }}"
+            DATABASE_URL="postgresql://${{ steps.tf_outputs.outputs.db_user }}:${{ steps.tf_outputs.outputs.db_password }}@${{ steps.tf_outputs.outputs.db_host }}:${{ steps.tf_outputs.outputs.db_port }}/${{ steps.tf_outputs.outputs.db_name }}"
           fi
           kubectl create secret generic backend-secrets \
             --namespace=kasi-connect \
-            --from-literal=DB_HOST="${{ secrets.DB_HOST }}" \
-            --from-literal=DB_PORT="${{ secrets.DB_PORT }}" \
-            --from-literal=DB_NAME="${{ secrets.DB_NAME }}" \
-            --from-literal=DB_USER="${{ secrets.DB_USER }}" \
-            --from-literal=DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+            --from-literal=DB_HOST="${{ steps.tf_outputs.outputs.db_host }}" \
+            --from-literal=DB_PORT="${{ steps.tf_outputs.outputs.db_port }}" \
+            --from-literal=DB_NAME="${{ steps.tf_outputs.outputs.db_name }}" \
+            --from-literal=DB_USER="${{ steps.tf_outputs.outputs.db_user }}" \
+            --from-literal=DB_PASSWORD="${{ steps.tf_outputs.outputs.db_password }}" \
             --from-literal=DATABASE_URL="${DATABASE_URL}" \
-            --from-literal=REDIS_HOST="${{ secrets.REDIS_HOST }}" \
-            --from-literal=REDIS_PORT="${{ secrets.REDIS_PORT }}" \
+            --from-literal=REDIS_HOST="${{ steps.tf_outputs.outputs.redis_host }}" \
+            --from-literal=REDIS_PORT="${{ steps.tf_outputs.outputs.redis_port }}" \
             --from-literal=REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}" \
             --from-literal=KAFKA_BROKERS="${KAFKA_BROKERS_EFFECTIVE}" \
             --from-literal=WHATSAPP_PROVIDER="${WHATSAPP_PROVIDER:-meta}" \
@@ -211,7 +284,7 @@ jobs:
             --from-literal=TWILIO_AUTH_TOKEN="${{ secrets.TWILIO_AUTH_TOKEN }}" \
             --from-literal=TWILIO_WHATSAPP_FROM="${{ secrets.TWILIO_WHATSAPP_FROM }}" \
             --from-literal=OBS_ENDPOINT="" \
-            --from-literal=OBS_BUCKET="${{ secrets.OBS_BUCKET }}" \
+            --from-literal=OBS_BUCKET="${{ steps.tf_outputs.outputs.obs_bucket }}" \
             --from-literal=OBS_ACCESS_KEY="" \
             --from-literal=OBS_SECRET_KEY="" \
             --dry-run=client -o yaml | kubectl apply -f -

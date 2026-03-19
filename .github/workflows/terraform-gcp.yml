@@ -130,15 +130,8 @@ jobs:
       GCP_REGION: ${{ secrets.GCP_REGION }}
       GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
       GAR_REPOSITORY: ${{ secrets.GAR_REPOSITORY }}
-      DB_HOST: ${{ secrets.DB_HOST }}
-      DB_PORT: ${{ secrets.DB_PORT }}
-      DB_NAME: ${{ secrets.DB_NAME }}
-      DB_USER: ${{ secrets.DB_USER }}
-      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      REDIS_HOST: ${{ secrets.REDIS_HOST }}
-      REDIS_PORT: ${{ secrets.REDIS_PORT }}
-      REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+      TF_STATE_BUCKET_GCP: ${{ secrets.TF_STATE_BUCKET_GCP }}
+      TF_STATE_PREFIX_GCP: ${{ secrets.TF_STATE_PREFIX_GCP }}
       KAFKA_BROKERS: ${{ secrets.KAFKA_BROKERS }}
       WHATSAPP_PROVIDER: ${{ secrets.WHATSAPP_PROVIDER }}
       WHATSAPP_VERIFY_TOKEN: ${{ secrets.WHATSAPP_VERIFY_TOKEN }}
@@ -147,7 +140,6 @@ jobs:
       TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
       TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
       TWILIO_WHATSAPP_FROM: ${{ secrets.TWILIO_WHATSAPP_FROM }}
-      OBS_BUCKET: ${{ secrets.OBS_BUCKET }}
 
   production:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
@@ -249,15 +241,8 @@ jobs:
       GCP_REGION: ${{ secrets.GCP_REGION }}
       GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
       GAR_REPOSITORY: ${{ secrets.GAR_REPOSITORY }}
-      DB_HOST: ${{ secrets.DB_HOST }}
-      DB_PORT: ${{ secrets.DB_PORT }}
-      DB_NAME: ${{ secrets.DB_NAME }}
-      DB_USER: ${{ secrets.DB_USER }}
-      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      REDIS_HOST: ${{ secrets.REDIS_HOST }}
-      REDIS_PORT: ${{ secrets.REDIS_PORT }}
-      REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+      TF_STATE_BUCKET_GCP: ${{ secrets.TF_STATE_BUCKET_GCP }}
+      TF_STATE_PREFIX_GCP: ${{ secrets.TF_STATE_PREFIX_GCP }}
       KAFKA_BROKERS: ${{ secrets.KAFKA_BROKERS }}
       WHATSAPP_PROVIDER: ${{ secrets.WHATSAPP_PROVIDER }}
       WHATSAPP_VERIFY_TOKEN: ${{ secrets.WHATSAPP_VERIFY_TOKEN }}
@@ -266,4 +251,3 @@ jobs:
       TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
       TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
       TWILIO_WHATSAPP_FROM: ${{ secrets.TWILIO_WHATSAPP_FROM }}
-      OBS_BUCKET: ${{ secrets.OBS_BUCKET }}
