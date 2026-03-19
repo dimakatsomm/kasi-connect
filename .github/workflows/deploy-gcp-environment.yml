@@ -1,4 +1,4 @@
-name: Deploy - GCP Environment (reusable)
+name: Deploy - GCP Environment
 
 on:
   workflow_call:
