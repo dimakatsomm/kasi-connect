@@ -131,6 +131,10 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v4
 
+      - name: Install gke-gcloud-auth-plugin
+        shell: bash
+        run: gcloud components install gke-gcloud-auth-plugin --quiet
+
       - name: Configure kubeconfig for GKE
         shell: bash
         run: |
