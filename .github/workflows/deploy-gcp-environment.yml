@@ -152,7 +152,11 @@ jobs:
         shell: bash
         run: |
           helm repo add bitnami https://charts.bitnami.com/bitnami --force-update
-          helm upgrade --install kafka bitnami/kafka \
+          # Remove stale release whose StatefulSet spec may conflict with new values
+          if helm status kafka --namespace messaging &>/dev/null; then
+            helm uninstall kafka --namespace messaging --wait --timeout 2m || true
+          fi
+          helm install kafka bitnami/kafka \
             --namespace messaging --create-namespace \
             --set controller.replicaCount=1 \
             --set controller.persistence.enabled=false \
