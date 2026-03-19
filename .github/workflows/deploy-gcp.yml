@@ -25,10 +25,6 @@ permissions:
   contents: read
   id-token: write
 
-concurrency:
-  group: deploy-gcp-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: false
-
 jobs:
   staging:
     if: |
@@ -37,8 +33,8 @@ jobs:
     uses: ./.github/workflows/deploy-gcp-environment.yml
     with:
       environment: staging
-      gke_cluster_name: ${{ secrets.GKE_CLUSTER_NAME_STAGING }}
     secrets:
+      GKE_CLUSTER_NAME: ${{ secrets.GKE_CLUSTER_NAME_STAGING }}
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_REGION: ${{ secrets.GCP_REGION }}
       GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
@@ -70,8 +66,8 @@ jobs:
     uses: ./.github/workflows/deploy-gcp-environment.yml
     with:
       environment: production
-      gke_cluster_name: ${{ secrets.GKE_CLUSTER_NAME_PRODUCTION }}
     secrets:
+      GKE_CLUSTER_NAME: ${{ secrets.GKE_CLUSTER_NAME_PRODUCTION }}
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_REGION: ${{ secrets.GCP_REGION }}
       GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}

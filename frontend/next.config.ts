@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   // PWA-ready: headers for service worker scope
   async headers() {
     return [

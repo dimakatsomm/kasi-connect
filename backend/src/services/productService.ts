@@ -1,6 +1,7 @@
 import Fuse, { IFuseOptions } from 'fuse.js';
-import * as db from '../db';
+import prisma from '../db';
 import logger from '../config/logger';
+import { decimalToNumber } from '../utils/prisma';
 import type {
   ProductRow,
   ParsedItem,
@@ -11,11 +12,13 @@ import type {
   OrderSummary,
 } from '../types';
 
+type SearchableProduct = ProductRow & { aliases: string[] };
+
 /**
  * Fuse.js options for fuzzy product name matching.
  * Lower threshold = stricter match.
  */
-const FUSE_OPTIONS: IFuseOptions<ProductRow> = {
+const FUSE_OPTIONS: IFuseOptions<SearchableProduct> = {
   keys: [
     { name: 'name', weight: 0.7 },
     { name: 'aliases', weight: 0.3 },
@@ -32,17 +35,13 @@ const FUSE_OPTIONS: IFuseOptions<ProductRow> = {
 export async function getVendorProducts(
   vendorId: string
 ): Promise<ProductRow[]> {
-  const result = await db.query<ProductRow>(
-    `SELECT id, vendor_id, name, price, description,
-            image_url, stock_level, low_stock_threshold,
-            is_available, is_special, special_price,
-            aliases, created_at, updated_at
-     FROM products
-     WHERE vendor_id = $1 AND is_available = TRUE
-     ORDER BY name`,
-    [vendorId]
-  );
-  return result.rows;
+  return prisma.product.findMany({
+    where: {
+      vendor_id: vendorId,
+      is_available: true,
+    },
+    orderBy: { name: 'asc' },
+  });
 }
 
 /**
@@ -67,7 +66,11 @@ export async function matchProducts(
   }
 
   // Build Fuse index
-  const fuse = new Fuse(products, FUSE_OPTIONS);
+  const searchableProducts: SearchableProduct[] = products.map((product) => ({
+    ...product,
+    aliases: product.aliases ?? [],
+  }));
+  const fuse = new Fuse(searchableProducts, FUSE_OPTIONS);
 
   const matched: MatchedItem[] = [];
   const ambiguous: AmbiguousItem[] = [];
@@ -120,8 +123,8 @@ export function buildOrderSummary(
   const lines: string[] = [];
 
   for (const { product, quantity } of matchedItems) {
-    const unitPrice = parseFloat(
-      String(product.special_price ?? product.price)
+    const unitPrice = decimalToNumber(
+      product.special_price ?? product.price
     );
     const lineTotal = unitPrice * quantity;
     subtotal += lineTotal;

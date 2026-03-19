@@ -10,9 +10,14 @@
     "test": "jest --runInBand --forceExit",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage --runInBand --forceExit",
-    "lint": "eslint src/ tests/ --ext .ts"
+    "lint": "eslint src/ tests/ --ext .ts",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:studio": "prisma studio"
   },
   "dependencies": {
+    "@prisma/client": "^5.15.0",
     "axios": "^1.6.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.1",
@@ -25,11 +30,11 @@
     "kafkajs": "^2.2.4",
     "morgan": "^1.10.0",
     "multer": "^2.1.1",
-    "pg": "^8.11.3",
     "uuid": "^9.0.0",
     "winston": "^3.11.0"
   },
   "devDependencies": {
+    "prisma": "^5.15.0",
     "@jest/globals": "^29.7.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
@@ -37,7 +42,6 @@
     "@types/morgan": "^1.9.9",
     "@types/multer": "^2.0.0",
     "@types/node": "^20.11.5",
-    "@types/pg": "^8.11.0",
     "@types/supertest": "^6.0.2",
     "@types/uuid": "^9.0.7",
     "@typescript-eslint/eslint-plugin": "^8.57.0",

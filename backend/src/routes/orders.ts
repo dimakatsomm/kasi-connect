@@ -1,9 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { body, param, validationResult } from 'express-validator';
-import * as db from '../db';
+import prisma from '../db';
 import * as orderService from '../services/orderService';
 import logger from '../config/logger';
-import type { OrderRow } from '../types';
+import { decimalToNumber } from '../utils/prisma';
+import type { OrderRow, OrderStatus } from '../types';
 
 const router = Router();
 
@@ -21,13 +22,18 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 
   const statusParam = req.query.status as string | undefined;
   const statuses = statusParam
-    ? statusParam.split(',')
+    ? statusParam.split(',').map((s) => s.trim()).filter(Boolean)
     : ['confirmed', 'preparing', 'ready'];
 
   try {
     const orders = await orderService.getVendorOrders(vendorId, statuses);
     res.json({ orders });
   } catch (err) {
+    const statusCode = (err as { statusCode?: number }).statusCode;
+    if (statusCode === 400) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Bad request' });
+      return;
+    }
     logger.error('Failed to list orders', {
       error: err instanceof Error ? err.message : String(err),
     });
@@ -50,34 +56,58 @@ router.get(
     }
 
     try {
-      const result = await db.query<OrderRow>(
-        `SELECT o.*,
-                c.phone AS customer_phone,
-                c.name  AS customer_name,
-                json_agg(
-                  json_build_object(
-                    'productId', oi.product_id,
-                    'productName', p.name,
-                    'quantity', oi.quantity,
-                    'unitPrice', oi.unit_price,
-                    'totalPrice', oi.total_price
-                  ) ORDER BY p.name
-                ) AS items
-         FROM orders o
-         JOIN customers c ON c.id = o.customer_id
-         JOIN order_items oi ON oi.order_id = o.id
-         JOIN products p ON p.id = oi.product_id
-         WHERE o.id = $1
-         GROUP BY o.id, c.phone, c.name`,
-        [req.params.id]
-      );
+      const order = await prisma.order.findUnique({
+        where: { id: req.params.id },
+        include: {
+          customer: {
+            select: {
+              phone: true,
+              name: true,
+            },
+          },
+          order_items: {
+            include: {
+              product: {
+                select: { name: true },
+              },
+            },
+            orderBy: { created_at: 'asc' },
+          },
+        },
+      });
 
-      if (!result.rows[0]) {
+      if (!order) {
         res.status(404).json({ error: 'Order not found' });
         return;
       }
 
-      res.json({ order: result.rows[0] });
+      const { customer, order_items, ...orderData } = order;
+
+      const enrichedOrder = {
+        ...(orderData as OrderRow),
+        subtotal: decimalToNumber(orderData.subtotal),
+        delivery_fee: decimalToNumber(orderData.delivery_fee),
+        total: decimalToNumber(orderData.total),
+        customer_phone: customer?.phone ?? '',
+        customer_name: customer?.name ?? null,
+        items: order_items.map(
+          (item): {
+            productId: string;
+            productName: string;
+            quantity: number;
+            unitPrice: number;
+            totalPrice: number;
+          } => ({
+            productId: item.product_id,
+            productName: item.product?.name ?? '',
+            quantity: item.quantity,
+            unitPrice: decimalToNumber(item.unit_price),
+            totalPrice: decimalToNumber(item.total_price),
+          })
+        ),
+      };
+
+      res.json({ order: enrichedOrder });
     } catch (err) {
       logger.error('Failed to get order', {
         error: err instanceof Error ? err.message : String(err),
@@ -108,10 +138,13 @@ router.patch(
       return;
     }
 
-    const { status } = req.body as { status: string };
+    const { status } = req.body as { status: OrderStatus };
 
     try {
-      const order = await orderService.updateOrderStatus(String(req.params.id), status);
+      const order = await orderService.updateOrderStatus(
+        String(req.params.id),
+        status
+      );
       res.json({ order });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

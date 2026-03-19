@@ -7,11 +7,9 @@ on:
         description: Target environment (staging or production)
         required: true
         type: string
-      gke_cluster_name:
-        description: GKE cluster name
-        required: true
-        type: string
     secrets:
+      GKE_CLUSTER_NAME:
+        required: true
       GCP_PROJECT_ID:
         required: true
       GCP_REGION:
@@ -39,7 +37,7 @@ on:
       REDIS_PASSWORD:
         required: false
       KAFKA_BROKERS:
-        required: false
+        required: true
       NEXT_PUBLIC_API_URL:
         required: true
       WHATSAPP_PROVIDER:
@@ -71,7 +69,7 @@ jobs:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_REGION: ${{ secrets.GCP_REGION }}
       GAR_REPOSITORY: ${{ secrets.GAR_REPOSITORY }}
-      GKE_CLUSTER_NAME: ${{ inputs.gke_cluster_name }}
+      GKE_CLUSTER_NAME: ${{ secrets.GKE_CLUSTER_NAME }}
       NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
       GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
     steps:
@@ -163,12 +161,11 @@ jobs:
         run: |
           helm repo add bitnami https://charts.bitnami.com/bitnami --force-update
           helm upgrade --install kafka bitnami/kafka \
-            --version 30.1.6 \
             --namespace messaging --create-namespace \
             --set replicaCount=1 \
-            --set controller.replicaCount=1 \
+            --set zookeeper.replicaCount=1 \
             --set persistence.enabled=false \
-            --set controller.persistence.enabled=false \
+            --set zookeeper.persistence.enabled=false \
             --wait --timeout 5m
           # Default to in-cluster broker unless caller already provided a value.
           if [ -z "${{ secrets.KAFKA_BROKERS }}" ]; then
@@ -181,7 +178,7 @@ jobs:
         shell: bash
         run: |
           ACCESS_TOKEN="$(gcloud auth print-access-token)"
-          kubectl create secret docker-registry gar-secret \
+          kubectl create secret docker-registry swr-secret \
             --docker-server="${GCP_REGION}-docker.pkg.dev" \
             --docker-username="oauth2accesstoken" \
             --docker-password="${ACCESS_TOKEN}" \

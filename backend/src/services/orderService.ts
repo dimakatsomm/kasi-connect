@@ -1,13 +1,35 @@
-import * as db from '../db';
+import { Prisma } from '@prisma/client';
+import prisma from '../db';
 import logger from '../config/logger';
 import { publishEvent } from '../kafka/producer';
 import config from '../config';
+import { decimalToNumber } from '../utils/prisma';
 import type {
   CustomerRow,
   OrderRow,
   CreateOrderParams,
   UpdateOrderStatusExtra,
+  LastOrderItem,
+  OrderStatus,
 } from '../types';
+
+type NormalizedOrderRow = Omit<OrderRow, 'subtotal' | 'delivery_fee' | 'total'> & {
+  subtotal: number;
+  delivery_fee: number;
+  total: number;
+};
+
+type OrderWithItems = NormalizedOrderRow & {
+  customer_phone: string;
+  customer_name: string | null;
+  items: Array<{
+    productId: string;
+    productName: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+  }>;
+};
 
 /**
  * Create or upsert a customer record.
@@ -18,28 +40,19 @@ export async function upsertCustomer(
   phone: string,
   name: string | null = null
 ): Promise<CustomerRow> {
-  const result = await db.query<CustomerRow>(
-    `INSERT INTO customers (phone, name)
-     VALUES ($1, $2)
-     ON CONFLICT (phone) DO UPDATE SET name = COALESCE($2, customers.name), updated_at = NOW()
-     RETURNING *`,
-    [phone, name]
-  );
-  return result.rows[0];
+  return prisma.customer.upsert({
+    where: { phone },
+    update: name ? { name } : {},
+    create: { phone, name },
+  });
 }
 
 /**
  * Get a customer by phone.
  * @param phone
  */
-export async function getCustomerByPhone(
-  phone: string
-): Promise<CustomerRow | null> {
-  const result = await db.query<CustomerRow>(
-    'SELECT * FROM customers WHERE phone = $1',
-    [phone]
-  );
-  return result.rows[0] ?? null;
+export function getCustomerByPhone(phone: string): Promise<CustomerRow | null> {
+  return prisma.customer.findUnique({ where: { phone } });
 }
 
 /**
@@ -48,28 +61,42 @@ export async function getCustomerByPhone(
  */
 export async function getLastOrder(
   customerId: string
-): Promise<(OrderRow & { items: unknown[] }) | null> {
-  const result = await db.query<OrderRow & { items: unknown[] }>(
-    `SELECT o.*,
-            json_agg(
-              json_build_object(
-                'productId', oi.product_id,
-                'quantity', oi.quantity,
-                'unitPrice', oi.unit_price,
-                'productName', p.name
-              )
-            ) AS items
-     FROM orders o
-     JOIN order_items oi ON oi.order_id = o.id
-     JOIN products p ON p.id = oi.product_id
-     WHERE o.customer_id = $1
-       AND o.status IN ('ready', 'delivered')
-     GROUP BY o.id
-     ORDER BY o.created_at DESC
-     LIMIT 1`,
-    [customerId]
-  );
-  return result.rows[0] ?? null;
+): Promise<(NormalizedOrderRow & { items: LastOrderItem[] }) | null> {
+  const order = await prisma.order.findFirst({
+    where: {
+      customer_id: customerId,
+      status: { in: ['ready', 'delivered'] },
+    },
+    orderBy: { created_at: 'desc' },
+    include: {
+      order_items: {
+        include: {
+          product: {
+            select: { name: true },
+          },
+        },
+        orderBy: { created_at: 'asc' },
+      },
+    },
+  });
+
+  if (!order) return null;
+
+  const { order_items, ...orderData } = order;
+  const items: LastOrderItem[] = order_items.map((item): LastOrderItem => ({
+    productId: item.product_id,
+    quantity: item.quantity,
+    unitPrice: decimalToNumber(item.unit_price),
+    productName: item.product?.name ?? '',
+  }));
+
+  return {
+    ...orderData,
+    subtotal: decimalToNumber(orderData.subtotal),
+    delivery_fee: decimalToNumber(orderData.delivery_fee),
+    total: decimalToNumber(orderData.total),
+    items,
+  };
 }
 
 /**
@@ -87,48 +114,67 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderRow> 
     total = 0,
   } = params;
 
-  const client = await db.getClient();
   try {
-    await client.query('BEGIN');
+    const order = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const vendor = await tx.vendor.findUniqueOrThrow({ where: { id: vendorId } });
+      let queuePosition: number | null = null;
+      if (vendor.type === 'food') {
+        const activeCount = await tx.order.count({
+          where: {
+            vendor_id: vendorId,
+            status: { in: ['confirmed', 'preparing'] },
+          },
+        });
+        queuePosition = activeCount + 1;
+      }
 
-    // Insert order
-    const orderResult = await client.query<OrderRow>(
-      `INSERT INTO orders (vendor_id, customer_id, status, fulfilment_type, delivery_address, delivery_fee, subtotal, total)
-       VALUES ($1, $2, 'confirmed', $3, $4, $5, $6, $7)
-       RETURNING *`,
-      [vendorId, customerId, fulfilmentType, deliveryAddress, deliveryFee, subtotal, total]
-    );
-    const order = orderResult.rows[0];
+      const createdOrder = await tx.order.create({
+        data: {
+          vendor_id: vendorId,
+          customer_id: customerId,
+          status: 'confirmed',
+          fulfilment_type: fulfilmentType,
+          delivery_address: deliveryAddress,
+          delivery_fee: deliveryFee,
+          subtotal,
+          total,
+          queue_position: queuePosition,
+        },
+      });
 
-    // Insert order items
-    for (const { product, quantity } of items) {
-      const unitPrice = parseFloat(
-        String(product.special_price ?? product.price)
-      );
-      await client.query(
-        `INSERT INTO order_items (order_id, product_id, quantity, unit_price, total_price)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [order.id, product.id, quantity, unitPrice, unitPrice * quantity]
-      );
+      for (const { product, quantity } of items) {
+        const unitPrice = decimalToNumber(product.special_price ?? product.price);
+        await tx.orderItem.create({
+          data: {
+            order_id: createdOrder.id,
+            product_id: product.id,
+            quantity,
+            unit_price: unitPrice,
+            total_price: unitPrice * quantity,
+          },
+        });
 
-      // Decrement stock
-      await client.query(
-        `UPDATE products SET stock_level = GREATEST(0, stock_level - $1) WHERE id = $2`,
-        [quantity, product.id]
-      );
-    }
+        const affectedRows = await tx.$executeRaw`
+          UPDATE products
+          SET stock_level = stock_level - ${quantity}
+          WHERE id = ${product.id}
+            AND stock_level >= ${quantity}
+        `;
+        if (affectedRows !== 1) {
+          throw new Error(`Insufficient stock for product ${product.id}`);
+        }
+      }
 
-    // Update customer's last order
-    await client.query(
-      `UPDATE customers SET last_order_id = $1 WHERE id = $2`,
-      [order.id, customerId]
-    );
+      await tx.customer.update({
+        where: { id: customerId },
+        data: { last_order_id: createdOrder.id },
+      });
 
-    await client.query('COMMIT');
+      return createdOrder;
+    });
 
     logger.info('Order created', { orderId: order.id, vendorId, customerId });
 
-    // Publish event (non-fatal)
     await publishEvent(config.kafka.topics.orderCreated, {
       orderId: order.id,
       vendorId,
@@ -140,50 +186,86 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderRow> 
 
     return order;
   } catch (err) {
-    await client.query('ROLLBACK');
     logger.error('Failed to create order', {
       error: err instanceof Error ? err.message : String(err),
     });
     throw err;
-  } finally {
-    client.release();
   }
 }
+
+const VALID_ORDER_STATUSES: ReadonlySet<string> = new Set<OrderStatus>([
+  'pending',
+  'confirmed',
+  'preparing',
+  'ready',
+  'delivered',
+  'cancelled',
+]);
 
 /**
  * Get orders for a vendor (for the dashboard kanban board).
  *
  * @param vendorId
  * @param statuses  Filter by status array
+ * @throws {Error} if any of the provided statuses is not a valid OrderStatus
  */
 export async function getVendorOrders(
   vendorId: string,
   statuses: string[] = ['confirmed', 'preparing', 'ready']
-): Promise<OrderRow[]> {
-  const result = await db.query<OrderRow>(
-    `SELECT o.*,
-            c.phone AS customer_phone,
-            c.name  AS customer_name,
-            json_agg(
-              json_build_object(
-                'productId', oi.product_id,
-                'productName', p.name,
-                'quantity', oi.quantity,
-                'unitPrice', oi.unit_price,
-                'totalPrice', oi.total_price
-              ) ORDER BY p.name
-            ) AS items
-     FROM orders o
-     JOIN customers c ON c.id = o.customer_id
-     JOIN order_items oi ON oi.order_id = o.id
-     JOIN products p ON p.id = oi.product_id
-     WHERE o.vendor_id = $1
-       AND o.status = ANY($2)
-     GROUP BY o.id, c.phone, c.name
-     ORDER BY o.created_at DESC`,
-    [vendorId, statuses]
-  );
-  return result.rows;
+): Promise<OrderWithItems[]> {
+  const invalid = statuses.filter((s) => !VALID_ORDER_STATUSES.has(s));
+  if (invalid.length > 0) {
+    throw Object.assign(new Error(`Invalid order status values: ${invalid.join(', ')}`), {
+      statusCode: 400,
+    });
+  }
+
+  const statusFilter = statuses as OrderStatus[];
+
+  const orders = await prisma.order.findMany({
+    where: {
+      vendor_id: vendorId,
+      status: { in: statusFilter },
+    },
+    orderBy: { created_at: 'desc' },
+    include: {
+      customer: {
+        select: {
+          phone: true,
+          name: true,
+        },
+      },
+      order_items: {
+        include: {
+          product: {
+            select: { name: true },
+          },
+        },
+        orderBy: { created_at: 'asc' },
+      },
+    },
+  });
+
+  return orders.map((order): OrderWithItems => {
+    const { customer, order_items, ...orderData } = order;
+    const items = order_items.map((item): OrderWithItems['items'][number] => ({
+      productId: item.product_id,
+      productName: item.product?.name ?? '',
+      quantity: item.quantity,
+      unitPrice: decimalToNumber(item.unit_price),
+      totalPrice: decimalToNumber(item.total_price),
+    }));
+
+    return {
+      ...orderData,
+      subtotal: decimalToNumber(orderData.subtotal),
+      delivery_fee: decimalToNumber(orderData.delivery_fee),
+      total: decimalToNumber(orderData.total),
+      customer_phone: customer?.phone ?? '',
+      customer_name: customer?.name ?? null,
+      items,
+    };
+  });
 }
 
 /**
@@ -195,67 +277,71 @@ export async function getVendorOrders(
  */
 export async function updateOrderStatus(
   orderId: string,
-  newStatus: string,
+  newStatus: OrderStatus,
   extra: UpdateOrderStatusExtra = {}
 ): Promise<OrderRow> {
-  const fields: string[] = ['status = $2'];
-  const values: unknown[] = [orderId, newStatus];
+  try {
+    const order = await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        status: newStatus,
+        queue_position:
+          extra.queuePosition !== undefined
+            ? extra.queuePosition
+            : undefined,
+        estimated_ready_time: extra.estimatedReadyTime,
+        updated_at: new Date(),
+      },
+    });
 
-  if (extra.queuePosition !== undefined) {
-    values.push(extra.queuePosition);
-    fields.push(`queue_position = $${values.length}`);
-  }
-  if (extra.estimatedReadyTime !== undefined) {
-    values.push(extra.estimatedReadyTime);
-    fields.push(`estimated_ready_time = $${values.length}`);
-  }
-
-  const result = await db.query<OrderRow>(
-    `UPDATE orders SET ${fields.join(', ')}, updated_at = NOW()
-     WHERE id = $1
-     RETURNING *`,
-    values
-  );
-
-  if (result.rowCount === 0) {
-    throw new Error(`Order ${orderId} not found`);
-  }
-
-  const order = result.rows[0];
-
-  // Publish event (non-fatal)
-  await publishEvent(config.kafka.topics.orderUpdated, {
-    orderId,
-    status: newStatus,
-    customerId: order.customer_id,
-    vendorId: order.vendor_id,
-  }).catch((err: Error) =>
-    logger.warn('Failed to publish order.updated event', { error: err.message })
-  );
-
-  if (newStatus === 'ready') {
-    await publishEvent(config.kafka.topics.orderReady, {
+    await publishEvent(config.kafka.topics.orderUpdated, {
       orderId,
+      status: newStatus,
       customerId: order.customer_id,
       vendorId: order.vendor_id,
     }).catch((err: Error) =>
-      logger.warn('Failed to publish order.ready event', { error: err.message })
+      logger.warn('Failed to publish order.updated event', { error: err.message })
     );
-  }
 
-  return order;
+    if (newStatus === 'ready') {
+      await publishEvent(config.kafka.topics.orderReady, {
+        orderId,
+        customerId: order.customer_id,
+        vendorId: order.vendor_id,
+      }).catch((err: Error) =>
+        logger.warn('Failed to publish order.ready event', { error: err.message })
+      );
+    }
+
+    return order;
+  } catch (err: unknown) {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === 'P2025'
+    ) {
+      throw new Error(`Order ${orderId} not found`);
+    }
+    throw err;
+  }
 }
 
 /**
  * Get next queue position for a food vendor (count of 'confirmed' + 'preparing' orders).
  * @param vendorId
+ * @param tx  Optional Prisma transaction client; uses the global client when omitted.
  */
-export async function getNextQueuePosition(vendorId: string): Promise<number> {
-  const result = await db.query<{ count: string }>(
-    `SELECT COUNT(*) AS count FROM orders WHERE vendor_id = $1 AND status IN ('confirmed', 'preparing')`,
-    [vendorId]
-  );
-  return parseInt(result.rows[0].count, 10) + 1;
+export async function getNextQueuePosition(
+  vendorId: string,
+  tx?: Prisma.TransactionClient
+): Promise<number> {
+  const client = tx ?? prisma;
+  const count = await client.order.count({
+    where: {
+      vendor_id: vendorId,
+      status: { in: ['confirmed', 'preparing'] },
+    },
+  });
+  return count + 1;
 }
 
 /**

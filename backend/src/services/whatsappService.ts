@@ -17,6 +17,66 @@ interface WhatsAppMessageResponse {
   messages?: Array<{ id: string }>;
 }
 
+interface TwilioMessageResponse {
+  sid: string;
+  status: string;
+  error_code: string | null;
+  error_message: string | null;
+}
+
+const USES_TWILIO = config.whatsapp.provider === 'twilio';
+const TWILIO_API_BASE = config.twilio.accountSid
+  ? `https://api.twilio.com/2010-04-01/Accounts/${config.twilio.accountSid}`
+  : undefined;
+
+function ensureTwilioConfig(): void {
+  if (!config.twilio.accountSid || !config.twilio.authToken || !config.twilio.fromNumber) {
+    throw new Error(
+      'Missing Twilio configuration. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_WHATSAPP_FROM.'
+    );
+  }
+}
+
+function formatE164(phone: string): string {
+  let value = phone.trim();
+  if (value.startsWith('whatsapp:')) {
+    value = value.slice('whatsapp:'.length);
+  }
+  if (!value.startsWith('+')) {
+    value = `+${value}`;
+  }
+  return value;
+}
+
+async function callTwilio(MessagesParams: URLSearchParams): Promise<WhatsAppMessageResponse> {
+  ensureTwilioConfig();
+
+  if (!TWILIO_API_BASE) {
+    throw new Error('Twilio API base URL is not defined.');
+  }
+
+  const response = await axios.post<TwilioMessageResponse>(
+    `${TWILIO_API_BASE}/Messages.json`,
+    MessagesParams.toString(),
+    {
+      auth: {
+        username: config.twilio.accountSid as string,
+        password: config.twilio.authToken as string,
+      },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    }
+  );
+
+  logger.debug('Twilio WhatsApp message sent', {
+    to: MessagesParams.get('To'),
+    sid: response.data.sid,
+  });
+
+  return { messages: [{ id: response.data.sid }] };
+}
+
 /**
  * Send a plain text WhatsApp message via Meta Cloud API.
  *
@@ -27,6 +87,19 @@ export async function sendTextMessage(
   to: string,
   body: string
 ): Promise<WhatsAppMessageResponse> {
+  if (USES_TWILIO) {
+    ensureTwilioConfig();
+    const fromNumber = config.twilio.fromNumber as string;
+
+    const params = new URLSearchParams({
+      To: `whatsapp:${formatE164(to)}`,
+      From: `whatsapp:${formatE164(fromNumber)}`,
+      Body: body,
+    });
+
+    return callTwilio(params);
+  }
+
   const url = `${config.whatsapp.apiBaseUrl}/${config.whatsapp.phoneNumberId}/messages`;
 
   const payload = {
@@ -69,6 +142,14 @@ export async function sendButtonMessage(
   bodyText: string,
   buttons: WhatsAppButton[]
 ): Promise<WhatsAppMessageResponse> {
+  if (USES_TWILIO) {
+    const options = buttons
+      .map((btn, idx) => `${idx + 1}. ${btn.title}`)
+      .join('\n');
+    const fallback = `${bodyText}\n\n${options}\n\nReply with the option text or number.`;
+    return sendTextMessage(to, fallback);
+  }
+
   const url = `${config.whatsapp.apiBaseUrl}/${config.whatsapp.phoneNumberId}/messages`;
 
   const payload = {
@@ -119,6 +200,17 @@ export async function sendListMessage(
   buttonLabel: string,
   rows: WhatsAppListRow[]
 ): Promise<WhatsAppMessageResponse> {
+  if (USES_TWILIO) {
+    const options = rows
+      .map((row, idx) => {
+        const description = row.description ? ` - ${row.description}` : '';
+        return `${idx + 1}. ${row.title}${description}`;
+      })
+      .join('\n');
+    const fallback = `${bodyText}\n\n${options}\n\nReply with the item number or title.`;
+    return sendTextMessage(to, fallback);
+  }
+
   const url = `${config.whatsapp.apiBaseUrl}/${config.whatsapp.phoneNumberId}/messages`;
 
   const payload = {
@@ -171,6 +263,30 @@ export async function sendListMessage(
 export async function downloadMedia(
   mediaId: string
 ): Promise<{ buffer: Buffer; mimeType: string }> {
+  if (USES_TWILIO) {
+    ensureTwilioConfig();
+    if (!TWILIO_API_BASE) {
+      throw new Error('Twilio API base URL is not defined.');
+    }
+
+    const mediaUrl = mediaId.startsWith('http')
+      ? mediaId
+      : `${TWILIO_API_BASE}/Messages/${mediaId}/Media`;
+
+    const mediaResp = await axios.get<ArrayBuffer>(mediaUrl, {
+      auth: {
+        username: config.twilio.accountSid as string,
+        password: config.twilio.authToken as string,
+      },
+      responseType: 'arraybuffer',
+    });
+
+    const mimeType =
+      (mediaResp.headers['content-type'] as string | undefined) ?? 'application/octet-stream';
+
+    return { buffer: Buffer.from(mediaResp.data), mimeType };
+  }
+
   // First, get the media URL
   const metaUrl = `${config.whatsapp.apiBaseUrl}/${mediaId}`;
   const metaResp = await axios.get<{ url: string; mime_type: string }>(metaUrl, {

@@ -59,4 +59,4 @@ spec:
               cpu: 500m
               memory: 512Mi
       imagePullSecrets:
-        - name: gar-secret
+        - name: swr-secret

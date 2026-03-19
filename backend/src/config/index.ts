@@ -5,6 +5,7 @@ export interface AppConfig {
   env: string;
   port: number;
   whatsapp: {
+    provider: 'meta' | 'twilio';
     verifyToken: string | undefined;
     accessToken: string | undefined;
     phoneNumberId: string | undefined;
@@ -54,6 +55,11 @@ export interface AppConfig {
   session: {
     inactivityTimeoutMs: number;
   };
+  twilio: {
+    accountSid: string | undefined;
+    authToken: string | undefined;
+    fromNumber: string | undefined;
+  };
 }
 
 const config: AppConfig = {
@@ -61,6 +67,10 @@ const config: AppConfig = {
   port: parseInt(process.env.PORT ?? '3000', 10),
 
   whatsapp: {
+    provider:
+      process.env.WHATSAPP_PROVIDER?.toLowerCase() === 'twilio'
+        ? 'twilio'
+        : 'meta',
     verifyToken: process.env.WHATSAPP_VERIFY_TOKEN,
     accessToken: process.env.WHATSAPP_ACCESS_TOKEN,
     phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
@@ -118,6 +128,12 @@ const config: AppConfig = {
   session: {
     inactivityTimeoutMs:
       parseInt(process.env.SESSION_INACTIVITY_TIMEOUT_MS ?? '1800000', 10),
+  },
+
+  twilio: {
+    accountSid: process.env.TWILIO_ACCOUNT_SID,
+    authToken: process.env.TWILIO_AUTH_TOKEN,
+    fromNumber: process.env.TWILIO_WHATSAPP_FROM,
   },
 };
 
