@@ -39,7 +39,7 @@ on:
       REDIS_PASSWORD:
         required: false
       KAFKA_BROKERS:
-        required: true
+        required: false
       NEXT_PUBLIC_API_URL:
         required: true
       WHATSAPP_PROVIDER:
@@ -163,6 +163,7 @@ jobs:
         run: |
           helm repo add bitnami https://charts.bitnami.com/bitnami --force-update
           helm upgrade --install kafka bitnami/kafka \
+            --version 26.8.5 \
             --namespace messaging --create-namespace \
             --set replicaCount=1 \
             --set zookeeper.replicaCount=1 \
@@ -180,7 +181,7 @@ jobs:
         shell: bash
         run: |
           ACCESS_TOKEN="$(gcloud auth print-access-token)"
-          kubectl create secret docker-registry swr-secret \
+          kubectl create secret docker-registry gar-secret \
             --docker-server="${GCP_REGION}-docker.pkg.dev" \
             --docker-username="oauth2accesstoken" \
             --docker-password="${ACCESS_TOKEN}" \
