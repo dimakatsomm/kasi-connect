@@ -1,14 +1,6 @@
 name: Deploy - Application (GCP)
 
 on:
-  workflow_run:
-    workflows:
-      - Terraform - GCP
-    types:
-      - completed
-    branches:
-      - main
-      - develop
   push:
     branches:
       - main
@@ -40,7 +32,6 @@ concurrency:
 jobs:
   staging:
     if: |
-      (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'develop') ||
       (github.event_name == 'push' && github.ref == 'refs/heads/develop') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
     uses: ./.github/workflows/deploy-gcp-environment.yml
@@ -74,7 +65,6 @@ jobs:
 
   production:
     if: |
-      (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
     uses: ./.github/workflows/deploy-gcp-environment.yml
