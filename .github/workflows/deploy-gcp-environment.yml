@@ -183,17 +183,6 @@ jobs:
             echo "KAFKA_BROKERS_EFFECTIVE=${{ secrets.KAFKA_BROKERS }}" >> "$GITHUB_ENV"
           fi
 
-      - name: Create image pull secret
-        shell: bash
-        run: |
-          ACCESS_TOKEN="$(gcloud auth print-access-token)"
-          kubectl create secret docker-registry swr-secret \
-            --docker-server="${GCP_REGION}-docker.pkg.dev" \
-            --docker-username="oauth2accesstoken" \
-            --docker-password="${ACCESS_TOKEN}" \
-            --namespace=kasi-connect \
-            --dry-run=client -o yaml | kubectl apply -f -
-
       - name: Create backend secrets
         shell: bash
         run: |
