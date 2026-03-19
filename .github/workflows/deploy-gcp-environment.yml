@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       environment:
-        description: Target environment (demo, staging, or production)
+        description: Target environment (staging or production)
         required: true
         type: string
       gke_cluster_name:
