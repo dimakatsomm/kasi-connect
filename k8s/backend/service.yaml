@@ -3,11 +3,16 @@ kind: Service
 metadata:
   name: backend
   namespace: kasi-connect
+  labels:
+    app: backend
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: kasi-connect
 spec:
   selector:
     app: backend
   ports:
-    - protocol: TCP
-      port: 80
+    - name: http
+      protocol: TCP
+      port: 3000
       targetPort: 3000
   type: ClusterIP

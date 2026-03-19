@@ -3,35 +3,60 @@ kind: Deployment
 metadata:
   name: backend
   namespace: kasi-connect
+  labels:
+    app: backend
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: kasi-connect
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   template:
     metadata:
       labels:
         app: backend
     spec:
-      imagePullSecrets:
-        - name: gar-secret
+      terminationGracePeriodSeconds: 30
       containers:
         - name: backend
-          image: BACKEND_IMAGE # replaced by CI/CD pipeline via sed during deployment
+          image: BACKEND_IMAGE
           ports:
             - containerPort: 3000
+              protocol: TCP
           envFrom:
             - secretRef:
                 name: backend-secrets
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3000"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /health
               port: 3000
             initialDelaySeconds: 10
             periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 3000
-            initialDelaySeconds: 30
-            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      imagePullSecrets:
+        - name: gar-secret

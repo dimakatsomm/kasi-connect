@@ -3,11 +3,16 @@ kind: Service
 metadata:
   name: frontend
   namespace: kasi-connect
+  labels:
+    app: frontend
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: kasi-connect
 spec:
   selector:
     app: frontend
   ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 3000
+    - name: http
+      protocol: TCP
+      port: 4000
+      targetPort: 4000
   type: LoadBalancer
