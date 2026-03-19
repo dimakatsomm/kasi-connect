@@ -29,7 +29,7 @@ on:
       DB_PASSWORD:
         required: true
       DATABASE_URL:
-        required: true
+        required: false
       REDIS_HOST:
         required: true
       REDIS_PORT:
@@ -186,6 +186,11 @@ jobs:
       - name: Create backend secrets
         shell: bash
         run: |
+          # Build DATABASE_URL from individual DB secrets if not explicitly provided
+          DATABASE_URL="${{ secrets.DATABASE_URL }}"
+          if [ -z "${DATABASE_URL}" ]; then
+            DATABASE_URL="postgresql://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@${{ secrets.DB_HOST }}:${{ secrets.DB_PORT }}/${{ secrets.DB_NAME }}"
+          fi
           kubectl create secret generic backend-secrets \
             --namespace=kasi-connect \
             --from-literal=DB_HOST="${{ secrets.DB_HOST }}" \
@@ -193,7 +198,7 @@ jobs:
             --from-literal=DB_NAME="${{ secrets.DB_NAME }}" \
             --from-literal=DB_USER="${{ secrets.DB_USER }}" \
             --from-literal=DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
-            --from-literal=DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            --from-literal=DATABASE_URL="${DATABASE_URL}" \
             --from-literal=REDIS_HOST="${{ secrets.REDIS_HOST }}" \
             --from-literal=REDIS_PORT="${{ secrets.REDIS_PORT }}" \
             --from-literal=REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}" \
