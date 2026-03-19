@@ -1,5 +1,7 @@
 FROM node:20-alpine AS builder
 
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 COPY package*.json tsconfig.json ./
 RUN npm ci
@@ -12,6 +14,8 @@ RUN npx prisma generate && npm run build
 
 # ─────────────────────────────────────────────
 FROM node:20-alpine AS runner
+
+RUN apk add --no-cache openssl
 
 WORKDIR /app
 
