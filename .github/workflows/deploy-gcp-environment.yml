@@ -163,12 +163,12 @@ jobs:
         run: |
           helm repo add bitnami https://charts.bitnami.com/bitnami --force-update
           helm upgrade --install kafka bitnami/kafka \
-            --version 26.8.5 \
+            --version 30.1.6 \
             --namespace messaging --create-namespace \
             --set replicaCount=1 \
-            --set zookeeper.replicaCount=1 \
+            --set controller.replicaCount=1 \
             --set persistence.enabled=false \
-            --set zookeeper.persistence.enabled=false \
+            --set controller.persistence.enabled=false \
             --wait --timeout 5m
           # Default to in-cluster broker unless caller already provided a value.
           if [ -z "${{ secrets.KAFKA_BROKERS }}" ]; then
