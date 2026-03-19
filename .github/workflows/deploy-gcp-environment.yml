@@ -154,14 +154,14 @@ jobs:
           helm repo add bitnami https://charts.bitnami.com/bitnami --force-update
           helm upgrade --install kafka bitnami/kafka \
             --namespace messaging --create-namespace \
-            --set replicaCount=1 \
-            --set zookeeper.replicaCount=1 \
-            --set persistence.enabled=false \
-            --set zookeeper.persistence.enabled=false \
-            --wait --timeout 5m
+            --set controller.replicaCount=1 \
+            --set controller.persistence.enabled=false \
+            --set broker.replicaCount=0 \
+            --set listeners.client.protocol=PLAINTEXT \
+            --wait --timeout 8m
           # Default to in-cluster broker unless caller already provided a value.
           if [ -z "${{ secrets.KAFKA_BROKERS }}" ]; then
-            echo "KAFKA_BROKERS_EFFECTIVE=kafka-headless.messaging.svc.cluster.local:9092" >> "$GITHUB_ENV"
+            echo "KAFKA_BROKERS_EFFECTIVE=kafka.messaging.svc.cluster.local:9092" >> "$GITHUB_ENV"
           else
             echo "KAFKA_BROKERS_EFFECTIVE=${{ secrets.KAFKA_BROKERS }}" >> "$GITHUB_ENV"
           fi
