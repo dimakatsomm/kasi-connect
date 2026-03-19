@@ -265,8 +265,15 @@ jobs:
           # Build DATABASE_URL from individual DB values if not explicitly provided
           DATABASE_URL="${{ secrets.DATABASE_URL }}"
           if [ -z "${DATABASE_URL}" ]; then
-            DATABASE_URL="postgresql://${{ steps.tf_outputs.outputs.db_user }}:${{ steps.tf_outputs.outputs.db_password }}@${{ steps.tf_outputs.outputs.db_host }}:${{ steps.tf_outputs.outputs.db_port }}/${{ steps.tf_outputs.outputs.db_name }}"
+            # URL-encode user and password — the Terraform-generated password
+            # may contain @, #, %, etc. which break the connection-URL format.
+            ENCODED_USER=$(printf '%s' "${{ steps.tf_outputs.outputs.db_user }}" \
+              | python3 -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(),safe=''))")
+            ENCODED_PASS=$(printf '%s' "${{ steps.tf_outputs.outputs.db_password }}" \
+              | python3 -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(),safe=''))")
+            DATABASE_URL="postgresql://${ENCODED_USER}:${ENCODED_PASS}@${{ steps.tf_outputs.outputs.db_host }}:${{ steps.tf_outputs.outputs.db_port }}/${{ steps.tf_outputs.outputs.db_name }}"
           fi
+          echo "DATABASE_URL structure: postgresql://<user>:<pass>@${{ steps.tf_outputs.outputs.db_host }}:${{ steps.tf_outputs.outputs.db_port }}/${{ steps.tf_outputs.outputs.db_name }}"
           kubectl create secret generic backend-secrets \
             --namespace=kasi-connect \
             --from-literal=DB_HOST="${{ steps.tf_outputs.outputs.db_host }}" \
