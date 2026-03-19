@@ -1,0 +1,216 @@
+name: Terraform - GCP
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'terraform-gcp/**'
+      - '.github/workflows/terraform-gcp.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  staging:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/develop') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    runs-on: ubuntu-latest
+    environment: staging
+    defaults:
+      run:
+        working-directory: terraform-gcp
+    env:
+      TF_IN_AUTOMATION: true
+      TF_VAR_environment: staging
+      TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
+      TF_VAR_region: ${{ secrets.GCP_REGION }}
+      GOOGLE_CLOUD_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+      TF_STATE_BUCKET_GCP: ${{ secrets.TF_STATE_BUCKET_GCP }}
+      TF_STATE_PREFIX_GCP: ${{ secrets.TF_STATE_PREFIX_GCP }}
+      GCP_REGION: ${{ secrets.GCP_REGION }}
+      GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure GCP staging secrets exist
+        shell: bash
+        run: |
+          : "${TF_VAR_project_id:?Set staging secret GCP_PROJECT_ID}"
+          : "${GCP_REGION:?Set staging secret GCP_REGION}"
+          : "${TF_STATE_BUCKET_GCP:?Set staging secret TF_STATE_BUCKET_GCP}"
+          : "${GCP_SA_KEY_JSON:?Set staging secret GCP_SA_KEY_JSON}"
+
+          if [ -z "${TF_STATE_PREFIX_GCP}" ]; then
+            echo "TF_STATE_PREFIX_GCP=kasi-connect" >> "$GITHUB_ENV"
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ env.GCP_SA_KEY_JSON }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+          terraform_wrapper: false
+
+      - name: Terraform fmt
+        shell: bash
+        run: terraform fmt -check -recursive
+
+      - name: Create CI backend config
+        shell: bash
+        run: |
+          cat > ci-backend.tf <<'EOF'
+          terraform {
+            backend "gcs" {}
+          }
+          EOF
+
+      - name: Ensure Terraform state bucket exists
+        shell: bash
+        run: |
+          gcloud storage buckets describe "gs://${TF_STATE_BUCKET_GCP}" \
+            --project="${TF_VAR_project_id}" 2>/dev/null || \
+          gcloud storage buckets create "gs://${TF_STATE_BUCKET_GCP}" \
+            --project="${TF_VAR_project_id}" \
+            --location="${GCP_REGION}" \
+            --uniform-bucket-level-access
+
+      - name: Terraform init
+        shell: bash
+        run: |
+          terraform init \
+            -backend-config="bucket=${TF_STATE_BUCKET_GCP}" \
+            -backend-config="prefix=${TF_STATE_PREFIX_GCP}/staging"
+
+      - name: Terraform validate
+        shell: bash
+        run: terraform validate -no-color
+
+      - name: Terraform plan
+        shell: bash
+        run: terraform plan -input=false -no-color -out=tfplan
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-gcp-plan-staging
+          path: terraform-gcp/tfplan
+          retention-days: 7
+
+      - name: Terraform apply
+        shell: bash
+        run: terraform apply -auto-approve -input=false -no-color tfplan
+
+  production:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: terraform-gcp
+    env:
+      TF_IN_AUTOMATION: true
+      TF_VAR_environment: prod
+      TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
+      TF_VAR_region: ${{ secrets.GCP_REGION }}
+      GOOGLE_CLOUD_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+      TF_STATE_BUCKET_GCP: ${{ secrets.TF_STATE_BUCKET_GCP }}
+      TF_STATE_PREFIX_GCP: ${{ secrets.TF_STATE_PREFIX_GCP }}
+      GCP_REGION: ${{ secrets.GCP_REGION }}
+      GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure GCP production secrets exist
+        shell: bash
+        run: |
+          : "${TF_VAR_project_id:?Set production secret GCP_PROJECT_ID}"
+          : "${GCP_REGION:?Set production secret GCP_REGION}"
+          : "${TF_STATE_BUCKET_GCP:?Set production secret TF_STATE_BUCKET_GCP}"
+          : "${GCP_SA_KEY_JSON:?Set production secret GCP_SA_KEY_JSON}"
+
+          if [ -z "${TF_STATE_PREFIX_GCP}" ]; then
+            echo "TF_STATE_PREFIX_GCP=kasi-connect" >> "$GITHUB_ENV"
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ env.GCP_SA_KEY_JSON }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+          terraform_wrapper: false
+
+      - name: Terraform fmt
+        shell: bash
+        run: terraform fmt -check -recursive
+
+      - name: Create CI backend config
+        shell: bash
+        run: |
+          cat > ci-backend.tf <<'EOF'
+          terraform {
+            backend "gcs" {}
+          }
+          EOF
+
+      - name: Ensure Terraform state bucket exists
+        shell: bash
+        run: |
+          gcloud storage buckets describe "gs://${TF_STATE_BUCKET_GCP}" \
+            --project="${TF_VAR_project_id}" 2>/dev/null || \
+          gcloud storage buckets create "gs://${TF_STATE_BUCKET_GCP}" \
+            --project="${TF_VAR_project_id}" \
+            --location="${GCP_REGION}" \
+            --uniform-bucket-level-access
+
+      - name: Terraform init
+        shell: bash
+        run: |
+          terraform init \
+            -backend-config="bucket=${TF_STATE_BUCKET_GCP}" \
+            -backend-config="prefix=${TF_STATE_PREFIX_GCP}/production"
+
+      - name: Terraform validate
+        shell: bash
+        run: terraform validate -no-color
+
+      - name: Terraform plan
+        shell: bash
+        run: terraform plan -input=false -no-color -out=tfplan
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-gcp-plan-production
+          path: terraform-gcp/tfplan
+          retention-days: 7
+
+      - name: Terraform apply
+        shell: bash
+        run: terraform apply -auto-approve -input=false -no-color tfplan
