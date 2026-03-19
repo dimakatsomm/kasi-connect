@@ -38,8 +38,6 @@ on:
         required: false
       KAFKA_BROKERS:
         required: true
-      NEXT_PUBLIC_API_URL:
-        required: true
       WHATSAPP_PROVIDER:
         required: false
       WHATSAPP_VERIFY_TOKEN:
@@ -70,7 +68,6 @@ jobs:
       GCP_REGION: ${{ secrets.GCP_REGION }}
       GAR_REPOSITORY: ${{ secrets.GAR_REPOSITORY }}
       GKE_CLUSTER_NAME: ${{ secrets.GKE_CLUSTER_NAME }}
-      NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
       GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
     steps:
       - name: Checkout repository
@@ -83,7 +80,6 @@ jobs:
           : "${GCP_REGION:?GCP_REGION is required}"
           : "${GAR_REPOSITORY:?GAR_REPOSITORY is required}"
           : "${GKE_CLUSTER_NAME:?GKE_CLUSTER_NAME is required}"
-          : "${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required for frontend build}"
           : "${GCP_SA_KEY_JSON:?GCP_SA_KEY_JSON is required}"
 
           WHATSAPP_PROVIDER_VALUE="${{ secrets.WHATSAPP_PROVIDER }}"
@@ -128,14 +124,6 @@ jobs:
           docker build -t "${IMAGE}" ./backend
           docker push "${IMAGE}"
           echo "BACKEND_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
-
-      - name: Build and push frontend image
-        shell: bash
-        run: |
-          IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GAR_REPOSITORY}/kasi-connect-frontend:${{ steps.image_tag.outputs.tag }}"
-          docker build --build-arg NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL}" -t "${IMAGE}" ./frontend
-          docker push "${IMAGE}"
-          echo "FRONTEND_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
@@ -213,14 +201,6 @@ jobs:
             --from-literal=OBS_SECRET_KEY="" \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Create frontend secrets
-        shell: bash
-        run: |
-          kubectl create secret generic frontend-secrets \
-            --namespace=kasi-connect \
-            --from-literal=NEXT_PUBLIC_API_URL="${{ secrets.NEXT_PUBLIC_API_URL }}" \
-            --dry-run=client -o yaml | kubectl apply -f -
-
       - name: Deploy backend
         shell: bash
         run: |
@@ -228,6 +208,44 @@ jobs:
             kubectl apply -f -
           kubectl apply -f k8s/backend/service.yaml
           kubectl rollout status deployment/backend --namespace=kasi-connect --timeout=5m
+
+      - name: Discover backend external URL
+        id: backend_url
+        shell: bash
+        run: |
+          echo "Waiting for backend LoadBalancer IP..."
+          for i in $(seq 1 30); do
+            EXTERNAL_IP=$(kubectl get svc backend --namespace=kasi-connect \
+              -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            if [ -n "${EXTERNAL_IP}" ]; then
+              break
+            fi
+            echo "  attempt ${i}/30 — not ready yet"
+            sleep 10
+          done
+          if [ -z "${EXTERNAL_IP}" ]; then
+            echo "ERROR: backend LoadBalancer IP not assigned after 5 minutes"
+            exit 1
+          fi
+          API_URL="http://${EXTERNAL_IP}:3000"
+          echo "Backend API URL: ${API_URL}"
+          echo "api_url=${API_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push frontend image
+        shell: bash
+        run: |
+          IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GAR_REPOSITORY}/kasi-connect-frontend:${{ steps.image_tag.outputs.tag }}"
+          docker build --build-arg NEXT_PUBLIC_API_URL="${{ steps.backend_url.outputs.api_url }}" -t "${IMAGE}" ./frontend
+          docker push "${IMAGE}"
+          echo "FRONTEND_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+
+      - name: Create frontend secrets
+        shell: bash
+        run: |
+          kubectl create secret generic frontend-secrets \
+            --namespace=kasi-connect \
+            --from-literal=NEXT_PUBLIC_API_URL="${{ steps.backend_url.outputs.api_url }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy frontend
         shell: bash

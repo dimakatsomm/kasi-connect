@@ -122,4 +122,4 @@ Set these GitHub secrets (preferably in `staging` and `production` environments)
 - `GKE_CLUSTER_NAME_STAGING`
 - `GKE_CLUSTER_NAME_PRODUCTION`
 
-Application deploy workflow also uses the existing runtime secrets (`DB_*`, `DATABASE_URL`, `REDIS_*`, `KAFKA_BROKERS`, WhatsApp/Twilio, `OBS_BUCKET`, `NEXT_PUBLIC_API_URL`).
+Application deploy workflow also uses the existing runtime secrets (`DB_*`, `DATABASE_URL`, `REDIS_*`, `KAFKA_BROKERS`, WhatsApp/Twilio, `OBS_BUCKET`). `NEXT_PUBLIC_API_URL` is auto-discovered from the backend LoadBalancer IP at deploy time.
