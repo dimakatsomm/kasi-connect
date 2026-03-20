@@ -6,8 +6,9 @@ import { ProductManagement } from '@/components/products/ProductManagement';
 import { AddProductForm } from '@/components/products/AddProductForm';
 
 // In production, vendorId would come from auth session.
-// For the MVP demo, we use an env var or a hardcoded placeholder.
-const VENDOR_ID = process.env.NEXT_PUBLIC_VENDOR_ID || 'demo-vendor-id';
+// For the MVP demo, we use an env var. Set NEXT_PUBLIC_VENDOR_ID to a valid
+// vendor UUID from the database (e.g. in frontend/.env.local).
+const VENDOR_ID = process.env.NEXT_PUBLIC_VENDOR_ID || '00000000-0000-4000-a000-000000000001';
 
 type Tab = 'orders' | 'products' | 'add-product';
 
@@ -23,16 +24,16 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-orange-500 text-white shadow-md">
+      <header className="bg-gray-400 text-white shadow-md">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-2xl">🛍️</span>
             <div>
               <h1 className="text-xl font-bold">KasiConnect</h1>
-              <p className="text-orange-100 text-xs">Vendor Dashboard</p>
+              <p className="text-gray-300 text-xs">Vendor Dashboard</p>
             </div>
           </div>
-          <div className="text-right text-xs text-orange-100">
+          <div className="text-right text-xs text-gray-300">
             <div className="font-medium">Order Management</div>
             <div className="opacity-75">WhatsApp Ordering Platform</div>
           </div>
@@ -49,7 +50,7 @@ export default function DashboardPage() {
                 onClick={() => setActiveTab(tab.id)}
                 className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
                   activeTab === tab.id
-                    ? 'border-orange-500 text-orange-600'
+                    ? 'border-gray-400 text-gray-500'
                     : 'border-transparent text-gray-600 hover:text-gray-800'
                 }`}
               >
@@ -78,7 +79,7 @@ export default function DashboardPage() {
               <h2 className="text-lg font-semibold text-gray-800">Product Catalogue</h2>
               <button
                 onClick={() => setActiveTab('add-product')}
-                className="text-sm bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                className="text-sm bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
               >
                 ➕ Add Product
               </button>
