@@ -37,7 +37,7 @@ export async function fetchProducts(vendorId: string): Promise<Product[]> {
 
 export async function createProduct(formData: FormData): Promise<Product> {
   const { data } = await apiClient.post('/api/products', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: { 'Content-Type': undefined },
   });
   return data.product;
 }
