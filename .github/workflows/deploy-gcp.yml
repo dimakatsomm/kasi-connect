@@ -68,6 +68,8 @@ jobs:
       TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
       TWILIO_WHATSAPP_FROM: ${{ secrets.TWILIO_WHATSAPP_FROM }}
       OBS_BUCKET: ${{ secrets.OBS_BUCKET }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      SEED_MODE: ${{ secrets.SEED_MODE }}
 
   production:
     if: |

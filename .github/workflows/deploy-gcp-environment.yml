@@ -58,6 +58,10 @@ on:
         required: false
       OBS_BUCKET:
         required: false
+      JWT_SECRET:
+        required: false
+      SEED_MODE:
+        required: false
 
 permissions:
   contents: read
@@ -297,12 +301,17 @@ jobs:
             --from-literal=OBS_BUCKET="${{ steps.tf_outputs.outputs.obs_bucket }}" \
             --from-literal=OBS_ACCESS_KEY="" \
             --from-literal=OBS_SECRET_KEY="" \
+            --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy backend
         shell: bash
         run: |
-          sed "s|BACKEND_IMAGE|${BACKEND_IMAGE}|g" k8s/backend/deployment.yaml | \
+          SEED_MODE="${{ secrets.SEED_MODE }}"
+          if [ -z "${SEED_MODE}" ]; then SEED_MODE="app"; fi
+          sed -e "s|BACKEND_IMAGE|${BACKEND_IMAGE}|g" \
+              -e "s|value: app|value: ${SEED_MODE}|g" \
+              k8s/backend/deployment.yaml | \
             kubectl apply -f -
           kubectl apply -f k8s/backend/service.yaml
           if ! kubectl rollout status deployment/backend --namespace=kasi-connect --timeout=8m; then
@@ -358,3 +367,23 @@ jobs:
             kubectl apply -f -
           kubectl apply -f k8s/frontend/service.yaml
           kubectl rollout status deployment/frontend --namespace=kasi-connect --timeout=5m
+
+      - name: Deployment summary
+        if: always()
+        shell: bash
+        run: |
+          BACKEND_IP=$(kubectl get svc backend --namespace=kasi-connect \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo 'pending')
+          FRONTEND_IP=$(kubectl get svc frontend --namespace=kasi-connect \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo 'pending')
+          echo "══════════════════════════════════════════════════"
+          echo "  KasiConnect ${{ inputs.environment }} — Deployment Summary"
+          echo "══════════════════════════════════════════════════"
+          echo ""
+          echo "  Backend API:  http://${BACKEND_IP}:3000"
+          echo "  Dashboard:    http://${FRONTEND_IP}:4000"
+          echo "  Webhook URL:  http://${BACKEND_IP}:3000/webhook"
+          echo ""
+          echo "  Set the Webhook URL in Twilio Console or Meta Developer Console."
+          echo "  Demo login:  demo@kasiconnect.co.za / demo1234"
+          echo "══════════════════════════════════════════════════"
