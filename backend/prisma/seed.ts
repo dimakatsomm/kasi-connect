@@ -126,13 +126,13 @@ async function seedDemoData(subCats?: SubCategoryRefs) {
   };
 
   const vendor = await prisma.vendor.upsert({
-    where: { phone: '27731234567' },
+    where: { phone: '27833361867' },
     update: {},
     create: {
       name: "Mama Hazel's Kitchen",
       type: 'food',
-      phone: '27731234567',
-      whatsapp_number: '27731234567',
+      phone: '27833361867',
+      whatsapp_number: '27833361867',
       address: '15 Maunde Street, Atteridgeville, Pretoria',
       latitude: -25.7764,
       longitude: 28.0827,
