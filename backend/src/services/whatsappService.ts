@@ -82,7 +82,7 @@ async function callTwilio(MessagesParams: URLSearchParams): Promise<WhatsAppMess
     );
 
     logger.debug('Twilio WhatsApp message sent', {
-      to: MessagesParams.get('To'),
+      to,
       sid: response.data.sid,
     });
 
@@ -92,8 +92,8 @@ async function callTwilio(MessagesParams: URLSearchParams): Promise<WhatsAppMess
       ? err.response?.data
       : (err instanceof Error ? err.message : String(err));
     logger.error('Failed to send Twilio WhatsApp message', {
-      to: MessagesParams.get('To'),
-      from: MessagesParams.get('From'),
+      to,
+      from,
       status: axios.isAxiosError(err) ? err.response?.status : undefined,
       error: errData,
     });
