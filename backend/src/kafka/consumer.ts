@@ -92,7 +92,7 @@ async function handleOrderReady({
 }
 
 /**
- * Broadcast a daily special to all customers who ordered in the last 30 days.
+ * Broadcast a daily special to all active subscribers of the vendor.
  */
 async function handleSpecialsBroadcast({
   message,
@@ -102,25 +102,23 @@ async function handleSpecialsBroadcast({
   vendorId: string;
 }): Promise<void> {
   try {
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const customers = await prisma.customer.findMany({
+    const subscribers = await prisma.vendorSubscription.findMany({
       where: {
-        orders: {
-          some: {
-            vendor_id: vendorId,
-            created_at: { gte: thirtyDaysAgo },
-          },
-        },
+        vendor_id: vendorId,
+        is_active: true,
       },
-      select: { phone: true },
+      select: { customer: { select: { phone: true } } },
     });
 
-    for (const { phone } of customers) {
+    for (const sub of subscribers) {
       await whatsappService
-        .sendTextMessage(phone, `🌟 *Daily Special!*\n\n${message}`)
+        .sendTextMessage(
+          sub.customer.phone,
+          `🌟 *Daily Special!*\n\n${message}\n\n_Reply STOP to unsubscribe._`
+        )
         .catch((err: Error) =>
-          logger.warn('Failed to send special to customer', {
-            phone,
+          logger.warn('Failed to send special to subscriber', {
+            phone: sub.customer.phone,
             error: err.message,
           })
         );
@@ -128,7 +126,7 @@ async function handleSpecialsBroadcast({
 
     logger.info('Specials broadcast sent', {
       vendorId,
-      count: customers.length,
+      count: subscribers.length,
     });
   } catch (err) {
     logger.error('Failed to broadcast special', {

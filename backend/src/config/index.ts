@@ -55,6 +55,9 @@ export interface AppConfig {
   session: {
     inactivityTimeoutMs: number;
   };
+  vendor: {
+    searchRadiusKm: number;
+  };
   twilio: {
     accountSid: string | undefined;
     authToken: string | undefined;
@@ -128,6 +131,10 @@ const config: AppConfig = {
   session: {
     inactivityTimeoutMs:
       parseInt(process.env.SESSION_INACTIVITY_TIMEOUT_MS ?? '1800000', 10),
+  },
+
+  vendor: {
+    searchRadiusKm: parseFloat(process.env.VENDOR_SEARCH_RADIUS_KM ?? '2'),
   },
 
   twilio: {

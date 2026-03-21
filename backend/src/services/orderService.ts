@@ -132,7 +132,7 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderRow> 
         data: {
           vendor_id: vendorId,
           customer_id: customerId,
-          status: 'confirmed',
+          status: 'pending',
           fulfilment_type: fulfilmentType,
           delivery_address: deliveryAddress,
           delivery_fee: deliveryFee,
