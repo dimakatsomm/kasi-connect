@@ -5,14 +5,23 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button, Card, Input } from '@/components/ui';
 
+type LoginMethod = 'email' | 'phone';
+
 export default function LoginPage() {
   const { login, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  const [email, setEmail] = useState('');
+  const [method, setMethod] = useState<LoginMethod>('email');
+  const [credential, setCredential] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  function switchMethod(m: LoginMethod) {
+    setMethod(m);
+    setCredential('');
+    setError('');
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -20,7 +29,7 @@ export default function LoginPage() {
     setSubmitting(true);
 
     try {
-      await login(email, password);
+      await login(credential, password, method);
       router.push('/dashboard');
     } catch (err: unknown) {
       const msg =
@@ -51,6 +60,32 @@ export default function LoginPage() {
         </div>
 
         <Card padding="lg" className="rounded-xl">
+          {/* Toggle between email and phone login */}
+          <div className="flex rounded-lg bg-slate-100 p-1 mb-4">
+            <button
+              type="button"
+              onClick={() => switchMethod('email')}
+              className={`flex-1 text-sm font-medium py-1.5 rounded-md transition-colors ${
+                method === 'email'
+                  ? 'bg-white text-emerald-700 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Email
+            </button>
+            <button
+              type="button"
+              onClick={() => switchMethod('phone')}
+              className={`flex-1 text-sm font-medium py-1.5 rounded-md transition-colors ${
+                method === 'phone'
+                  ? 'bg-white text-emerald-700 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Phone
+            </button>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
               <div className="bg-red-50 text-red-700 text-sm p-3 rounded-lg border border-red-200">
@@ -59,17 +94,17 @@ export default function LoginPage() {
             )}
 
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">
-                Email
+              <label htmlFor="credential" className="block text-sm font-medium text-slate-700 mb-1">
+                {method === 'email' ? 'Email' : 'Phone Number'}
               </label>
               <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
+                id="credential"
+                type={method === 'email' ? 'email' : 'tel'}
+                value={credential}
+                onChange={(e) => setCredential(e.target.value)}
+                placeholder={method === 'email' ? 'you@example.com' : '27731234567'}
                 required
-                autoComplete="email"
+                autoComplete={method === 'email' ? 'email' : 'tel'}
               />
             </div>
 

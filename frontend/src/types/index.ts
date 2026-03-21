@@ -124,7 +124,8 @@ export const STATUS_ACTION_LABELS: Record<OrderStatus, string> = {
 
 export interface AuthUser {
   id: string;
-  email: string;
+  email?: string | null;
+  phone?: string | null;
   name?: string;
   role: string;
   vendorId: string;

@@ -7,7 +7,7 @@ import { login as apiLogin, register as apiRegister, fetchMe, setAuthToken } fro
 interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (credential: string, password: string, method?: 'email' | 'phone') => Promise<void>;
   register: (email: string, password: string, vendorId: string, name?: string) => Promise<void>;
   logout: () => void;
 }
@@ -49,8 +49,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const { token, user: u } = await apiLogin(email, password);
+  const login = useCallback(async (credential: string, password: string, method: 'email' | 'phone' = 'email') => {
+    const { token, user: u } = await apiLogin(credential, password, method);
     localStorage.setItem(TOKEN_KEY, token);
     setAuthToken(token);
     setUser(u);

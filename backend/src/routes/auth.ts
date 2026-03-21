@@ -13,10 +13,10 @@ const router = Router();
 // ── POST /api/auth/register ───────────────────────────────────────────────────
 router.post('/register', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, password, name, vendorId } = req.body;
+    const { email, phone, password, name, vendorId } = req.body;
 
-    if (!email || !password || !vendorId) {
-      res.status(400).json({ error: 'email, password, and vendorId are required' });
+    if ((!email && !phone) || !password || !vendorId) {
+      res.status(400).json({ error: 'email or phone, password, and vendorId are required' });
       return;
     }
 
@@ -32,18 +32,28 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Check for existing user with same email
-    const existing = await prisma.vendorUser.findUnique({ where: { email } });
-    if (existing) {
-      res.status(409).json({ error: 'Email already registered' });
-      return;
+    // Check for existing user with same email or phone
+    if (email) {
+      const existingEmail = await prisma.vendorUser.findUnique({ where: { email } });
+      if (existingEmail) {
+        res.status(409).json({ error: 'Email already registered' });
+        return;
+      }
+    }
+    if (phone) {
+      const existingPhone = await prisma.vendorUser.findUnique({ where: { phone } });
+      if (existingPhone) {
+        res.status(409).json({ error: 'Phone number already registered' });
+        return;
+      }
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
 
     const user = await prisma.vendorUser.create({
       data: {
-        email,
+        email: email || null,
+        phone: phone || null,
         password_hash: passwordHash,
         name: name || null,
         vendor_id: vendorId,
@@ -55,6 +65,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       userId: user.id,
       vendorId: user.vendor_id,
       email: user.email,
+      phone: user.phone,
       role: user.role,
     };
 
@@ -65,6 +76,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       user: {
         id: user.id,
         email: user.email,
+        phone: user.phone,
         name: user.name,
         role: user.role,
         vendorId: user.vendor_id,
@@ -80,26 +92,25 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
 // ── POST /api/auth/login ─────────────────────────────────────────────────────
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, password } = req.body;
+    const { email, phone, password } = req.body;
 
-    if (!email || !password) {
-      res.status(400).json({ error: 'Email and password are required' });
+    if ((!email && !phone) || !password) {
+      res.status(400).json({ error: 'Email or phone, and password are required' });
       return;
     }
 
-    const user = await prisma.vendorUser.findUnique({
-      where: { email },
-      include: { vendor: true },
-    });
+    const user = email
+      ? await prisma.vendorUser.findUnique({ where: { email }, include: { vendor: true } })
+      : await prisma.vendorUser.findUnique({ where: { phone }, include: { vendor: true } });
 
     if (!user) {
-      res.status(401).json({ error: 'Invalid email or password' });
+      res.status(401).json({ error: 'Invalid credentials' });
       return;
     }
 
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
-      res.status(401).json({ error: 'Invalid email or password' });
+      res.status(401).json({ error: 'Invalid credentials' });
       return;
     }
 
@@ -107,6 +118,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       userId: user.id,
       vendorId: user.vendor_id,
       email: user.email,
+      phone: user.phone,
       role: user.role,
     };
 
@@ -117,6 +129,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       user: {
         id: user.id,
         email: user.email,
+        phone: user.phone,
         name: user.name,
         role: user.role,
         vendorId: user.vendor_id,
@@ -146,6 +159,7 @@ router.get('/me', requireAuth, async (req: Request, res: Response): Promise<void
       user: {
         id: user.id,
         email: user.email,
+        phone: user.phone,
         name: user.name,
         role: user.role,
         vendorId: user.vendor_id,

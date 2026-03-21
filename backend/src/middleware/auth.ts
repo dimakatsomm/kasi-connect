@@ -5,7 +5,8 @@ import config from '../config';
 export interface AuthPayload {
   userId: string;
   vendorId: string;
-  email: string;
+  email: string | null;
+  phone: string | null;
   role: string;
 }
 

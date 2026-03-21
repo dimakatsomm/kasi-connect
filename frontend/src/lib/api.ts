@@ -80,8 +80,15 @@ export async function fetchCategories(): Promise<Category[]> {
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
-export async function login(email: string, password: string): Promise<AuthResponse> {
-  const { data } = await apiClient.post('/api/auth/login', { email, password });
+export async function login(
+  credential: string,
+  password: string,
+  method: 'email' | 'phone' = 'email'
+): Promise<AuthResponse> {
+  const body = method === 'phone'
+    ? { phone: credential, password }
+    : { email: credential, password };
+  const { data } = await apiClient.post('/api/auth/login', body);
   return data;
 }
 
