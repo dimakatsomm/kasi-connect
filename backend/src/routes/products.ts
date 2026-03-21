@@ -1,5 +1,8 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import crypto from 'crypto';
 import { body, param, validationResult } from 'express-validator';
 import { Prisma } from '@prisma/client';
 import prisma from '../db';
@@ -7,9 +10,19 @@ import { publishEvent } from '../kafka/producer';
 import config from '../config';
 import logger from '../config/logger';
 
+const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads');
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
 const router = Router();
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+    filename: (_req, file, cb) => {
+      const unique = crypto.randomBytes(8).toString('hex');
+      const ext = path.extname(file.originalname);
+      cb(null, `${unique}${ext}`);
+    },
+  }),
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
@@ -82,7 +95,7 @@ router.post(
 
     let imageUrl: string | null = null;
     if (req.file) {
-      imageUrl = `/uploads/${req.file.originalname}`;
+      imageUrl = `/uploads/${req.file.filename}`;
     }
 
     const aliasesArray: string[] = aliases
@@ -227,7 +240,7 @@ router.patch(
     }
 
     if (req.file) {
-      data.image_url = `/uploads/${req.file.originalname}`;
+      data.image_url = `/uploads/${req.file.filename}`;
     }
 
     if (Object.keys(data).length === 0) {

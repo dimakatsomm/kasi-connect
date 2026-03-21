@@ -112,7 +112,7 @@ export function ProductManagement({ vendorId }: ProductManagementProps) {
             {product.image_url ? (
               <div className="relative w-full h-36 mb-3">
                 <Image
-                  src={product.image_url}
+                  src={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}${product.image_url}`}
                   alt={product.name}
                   fill
                   className="object-cover rounded-md"

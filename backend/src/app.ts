@@ -5,6 +5,7 @@ import express, {
   NextFunction,
   ErrorRequestHandler,
 } from 'express';
+import path from 'path';
 import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
@@ -43,6 +44,9 @@ app.use(limiter);
 // ── Body parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// ── Static files (uploaded product images) ────────────────────────────────────
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req: Request, res: Response): void => {
