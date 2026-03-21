@@ -143,7 +143,10 @@ async function seedDemoData(subCats?: SubCategoryRefs) {
 
   console.log(`✔ Vendor: ${vendor.name} (${vendor.id})`);
 
-  // Remove existing products for this vendor so the script is idempotent
+  // Remove existing daily specials & products for this vendor so the script is idempotent
+  await prisma.dailySpecial.deleteMany({
+    where: { product: { vendor_id: vendor.id } },
+  });
   await prisma.product.deleteMany({ where: { vendor_id: vendor.id } });
 
   const products = await prisma.product.createMany({
