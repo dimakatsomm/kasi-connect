@@ -157,7 +157,7 @@ export async function createOrder(params: CreateOrderParams): Promise<OrderRow> 
         const affectedRows = await tx.$executeRaw`
           UPDATE products
           SET stock_level = stock_level - ${quantity}
-          WHERE id = ${product.id}
+          WHERE id = ${product.id}::uuid
             AND stock_level >= ${quantity}
         `;
         if (affectedRows !== 1) {
