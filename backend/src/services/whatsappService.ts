@@ -55,6 +55,13 @@ async function callTwilio(MessagesParams: URLSearchParams): Promise<WhatsAppMess
     throw new Error('Twilio API base URL is not defined.');
   }
 
+  logger.info('Twilio API request context', {
+    accountSid: config.twilio.accountSid,
+    apiBase: TWILIO_API_BASE,
+    to: MessagesParams.get('To'),
+    from: MessagesParams.get('From'),
+  });
+
   try {
     const response = await axios.post<TwilioMessageResponse>(
       `${TWILIO_API_BASE}/Messages.json`,
