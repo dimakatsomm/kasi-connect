@@ -107,6 +107,16 @@ export async function handleMessage(
     // If not subscribed to anything, fall through to normal flow
   }
 
+  // ── Global RESTART handler — reset session from any non-initial state ─────
+  if (
+    session.state !== SESSION_STATES.AWAITING_SECTOR &&
+    /^(hi|hello|hey|howzit|sawubona|dumelang|dumela|restart|start over|cancel|menu)$/i.test(trimmedText)
+  ) {
+    await sessionService.resetSession(from);
+    await sendSectorPrompt(from);
+    return;
+  }
+
   try {
     switch (session.state) {
       case SESSION_STATES.AWAITING_SECTOR:
@@ -244,9 +254,9 @@ async function handleSectorState(from: string, text: string): Promise<void> {
   });
 
   const sectorLabel = sector === 'spaza' ? 'Spaza Shop' : 'Restaurant';
-  await whatsappService.sendTextMessage(
+  await whatsappService.sendLocationRequest(
     from,
-    `Great! You chose *${sectorLabel}*.\n\n📍 Please share your location so I can find nearby ${sectorLabel}s.\n\nDrop a 📌 location pin or type your area name.`
+    `Great! You chose *${sectorLabel}*.\n\n📍 Share your location so I can find nearby ${sectorLabel}s, or type your area name.`
   );
 }
 
@@ -290,11 +300,24 @@ async function handleLocationState(
     const nearby = await findNearbyVendors(session.sector, customerLat, customerLng);
 
     if (nearby.length === 0) {
+      // Try a wider radius (10 km) before giving up
+      const widerNearby = await findNearbyVendors(session.sector, customerLat, customerLng, 10);
+      if (widerNearby.length > 0) {
+        await sessionService.updateSession(from, {
+          nearbyVendors: widerNearby,
+          state: SESSION_STATES.AWAITING_VENDOR_SELECTION,
+        });
+        await sendVendorSelectionList(from, widerNearby, session.sector);
+        return;
+      }
+
       const sectorLabel = session.sector === 'spaza' ? 'Spaza Shops' : 'Restaurants';
       await whatsappService.sendTextMessage(
         from,
-        `😔 No ${sectorLabel} found near you. Try sharing a different location or type your area name.`
+        `😔 No ${sectorLabel} found near you. Let's start over — you can try a different option.`
       );
+      await sessionService.resetSession(from);
+      await sendSectorPrompt(from);
       return;
     }
 
@@ -307,24 +330,62 @@ async function handleLocationState(
     return;
   }
 
-  // Text-based area search — find all active vendors of the sector type
-  // (future: geocode the area name)
+  // Text-based area search — filter by address containing the area name
   const vendorType = session.sector === 'spaza' ? 'retail' : 'food';
-  const allVendors = await prisma.vendor.findMany({
+  const areaText = text.trim();
+
+  // First try to find vendors matching the area name in their address
+  let allVendors = await prisma.vendor.findMany({
     where: {
       is_active: true,
       type: vendorType as 'retail' | 'food',
+      ...(areaText ? { address: { contains: areaText, mode: 'insensitive' as const } } : {}),
     },
     select: { id: true, name: true, type: true, address: true },
     take: 10,
   });
 
+  // If no area-specific results, broaden to all vendors of the sector type
+  if (allVendors.length === 0 && areaText) {
+    allVendors = await prisma.vendor.findMany({
+      where: {
+        is_active: true,
+        type: vendorType as 'retail' | 'food',
+      },
+      select: { id: true, name: true, type: true, address: true },
+      take: 10,
+    });
+  }
+
+  // If still nothing in this sector, try the OTHER sector for the area
   if (allVendors.length === 0) {
-    const sectorLabel = session.sector === 'spaza' ? 'Spaza Shops' : 'Restaurants';
+    const otherType = vendorType === 'retail' ? 'food' : 'retail';
+    allVendors = await prisma.vendor.findMany({
+      where: {
+        is_active: true,
+        type: otherType as 'retail' | 'food',
+        ...(areaText ? { address: { contains: areaText, mode: 'insensitive' as const } } : {}),
+      },
+      select: { id: true, name: true, type: true, address: true },
+      take: 10,
+    });
+
+    if (allVendors.length > 0) {
+      const otherLabel = otherType === 'retail' ? 'Spaza Shops' : 'Restaurants';
+      await whatsappService.sendTextMessage(
+        from,
+        `I couldn't find your selection, but I found ${otherLabel} in *${areaText}*:`
+      );
+    }
+  }
+
+  if (allVendors.length === 0) {
     await whatsappService.sendTextMessage(
       from,
-      `😔 No ${sectorLabel} are available right now. Please try again later.`
+      `😔 No shops or restaurants found${areaText ? ` in *${areaText}*` : ''}. Let's start over.`
     );
+    await sessionService.resetSession(from);
+    await sendSectorPrompt(from);
     return;
   }
 

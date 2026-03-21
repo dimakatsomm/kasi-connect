@@ -279,6 +279,60 @@ export async function sendListMessage(
 }
 
 /**
+ * Send a location request message, prompting the user to share their live location.
+ * Uses Meta's interactive location_request_message type.
+ * Falls back to a text prompt for Twilio.
+ *
+ * @param to       Recipient phone
+ * @param bodyText Explanatory text shown above the "Send location" button
+ */
+export async function sendLocationRequest(
+  to: string,
+  bodyText: string
+): Promise<WhatsAppMessageResponse> {
+  if (USES_TWILIO) {
+    return sendTextMessage(
+      to,
+      `${bodyText}\n\nPlease share your 📍 location pin or type your area name.`
+    );
+  }
+
+  const url = `${config.whatsapp.apiBaseUrl}/${config.whatsapp.phoneNumberId}/messages`;
+
+  const payload = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'interactive',
+    interactive: {
+      type: 'location_request_message',
+      body: { text: bodyText },
+      action: { name: 'send_location' },
+    },
+  };
+
+  try {
+    const response = await axios.post<WhatsAppMessageResponse>(url, payload, {
+      headers: {
+        Authorization: `Bearer ${config.whatsapp.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    logger.debug('WhatsApp location request sent', { to });
+    return response.data;
+  } catch (err) {
+    const errData =
+      axios.isAxiosError(err) ? (err.response?.data as unknown) : (err instanceof Error ? err.message : String(err));
+    logger.error('Failed to send WhatsApp location request', { to, error: errData });
+    // Fall back to a plain text prompt so the flow isn't blocked
+    return sendTextMessage(
+      to,
+      `${bodyText}\n\nDrop a 📌 location pin or type your area name.`
+    );
+  }
+}
+
+/**
  * Download a media file (voice note) by its WhatsApp media ID.
  * Returns the media as a Buffer.
  *
