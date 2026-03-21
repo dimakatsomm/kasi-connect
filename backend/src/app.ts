@@ -16,6 +16,7 @@ import ordersRouter from './routes/orders';
 import productsRouter from './routes/products';
 import vendorsRouter from './routes/vendors';
 import categoriesRouter from './routes/categories';
+import authRouter from './routes/auth';
 
 const app: Application = express();
 
@@ -54,6 +55,7 @@ app.use('/api/orders', ordersRouter);
 app.use('/api/products', productsRouter);
 app.use('/api/vendors', vendorsRouter);
 app.use('/api/categories', categoriesRouter);
+app.use('/api/auth', authRouter);
 
 // ── 404 handler ───────────────────────────────────────────────────────────────
 app.use((_req: Request, res: Response): void => {

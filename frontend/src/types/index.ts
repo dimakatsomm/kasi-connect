@@ -119,3 +119,19 @@ export const STATUS_ACTION_LABELS: Record<OrderStatus, string> = {
   delivered: '',
   cancelled: '',
 };
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name?: string;
+  role: string;
+  vendorId: string;
+  vendorName: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: AuthUser;
+}

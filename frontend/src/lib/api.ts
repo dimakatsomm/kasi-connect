@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Order, OrderStatus, Product, Vendor, Category } from '@/types';
+import type { Order, OrderStatus, Product, Vendor, Category, AuthResponse } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -76,4 +76,39 @@ export async function fetchVendor(vendorId: string): Promise<Vendor> {
 export async function fetchCategories(): Promise<Category[]> {
   const { data } = await apiClient.get('/api/categories');
   return data.categories;
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export async function login(email: string, password: string): Promise<AuthResponse> {
+  const { data } = await apiClient.post('/api/auth/login', { email, password });
+  return data;
+}
+
+export async function register(
+  email: string,
+  password: string,
+  vendorId: string,
+  name?: string
+): Promise<AuthResponse> {
+  const { data } = await apiClient.post('/api/auth/register', {
+    email,
+    password,
+    vendorId,
+    name,
+  });
+  return data;
+}
+
+export async function fetchMe(): Promise<AuthResponse['user']> {
+  const { data } = await apiClient.get('/api/auth/me');
+  return data.user;
+}
+
+export function setAuthToken(token: string | null): void {
+  if (token) {
+    apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+  } else {
+    delete apiClient.defaults.headers.common['Authorization'];
+  }
 }

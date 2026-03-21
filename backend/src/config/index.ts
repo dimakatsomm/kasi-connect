@@ -63,6 +63,10 @@ export interface AppConfig {
     authToken: string | undefined;
     fromNumber: string | undefined;
   };
+  jwt: {
+    secret: string;
+    expiresIn: string;
+  };
 }
 
 const config: AppConfig = {
@@ -141,6 +145,11 @@ const config: AppConfig = {
     accountSid: process.env.TWILIO_ACCOUNT_SID,
     authToken: process.env.TWILIO_AUTH_TOKEN,
     fromNumber: process.env.TWILIO_WHATSAPP_FROM,
+  },
+
+  jwt: {
+    secret: process.env.JWT_SECRET ?? 'dev-secret-change-in-production',
+    expiresIn: process.env.JWT_EXPIRES_IN ?? '7d',
   },
 };
 

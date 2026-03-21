@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -175,6 +176,24 @@ async function main() {
   });
 
   console.log(`  ✔ Created ${products.count} products`);
+
+  // ── Demo vendor user (login: demo@kasiconnect.co.za / demo1234) ───────────
+  const passwordHash = await bcrypt.hash('demo1234', 12);
+
+  const demoUser = await prisma.vendorUser.upsert({
+    where: { email: 'demo@kasiconnect.co.za' },
+    update: {},
+    create: {
+      vendor_id: vendor.id,
+      email: 'demo@kasiconnect.co.za',
+      password_hash: passwordHash,
+      name: 'Mama Hazel',
+      role: 'owner',
+    },
+  });
+
+  console.log(`✔ Demo user: ${demoUser.email} (vendor: ${vendor.name})`);
+
   console.log('\n🚀 Demo seed complete!');
 }
 

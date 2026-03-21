@@ -1,20 +1,36 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { KanbanBoard } from '@/components/orders/KanbanBoard';
 import { ProductManagement } from '@/components/products/ProductManagement';
 import { AddProductForm } from '@/components/products/AddProductForm';
 import { Button, Card } from '@/components/ui';
-
-// In production, vendorId would come from auth session.
-// For the MVP demo, we use an env var. Set NEXT_PUBLIC_VENDOR_ID to a valid
-// vendor UUID from the database (e.g. in frontend/.env.local).
-const VENDOR_ID = process.env.NEXT_PUBLIC_VENDOR_ID || '00000000-0000-4000-a000-000000000001';
+import { useAuth } from '@/contexts/AuthContext';
 
 type Tab = 'orders' | 'products' | 'add-product';
 
 export default function DashboardPage() {
+  const { user, loading, logout } = useAuth();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>('orders');
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push('/login');
+    }
+  }, [loading, user, router]);
+
+  if (loading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <p className="text-slate-500">Loading…</p>
+      </div>
+    );
+  }
+
+  const vendorId = user.vendorId;
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'orders', label: 'Orders', icon: '📋' },
@@ -35,8 +51,13 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="text-right text-xs text-emerald-200">
-            <div className="font-medium">Order Management</div>
-            <div className="opacity-75">WhatsApp Ordering Platform</div>
+            <div className="font-medium">{user.vendorName}</div>
+            <button
+              onClick={logout}
+              className="text-emerald-300 hover:text-white transition-colors mt-0.5"
+            >
+              Sign out
+            </button>
           </div>
         </div>
       </header>
@@ -70,7 +91,7 @@ export default function DashboardPage() {
               <h2 className="text-lg font-semibold text-slate-800">Live Orders</h2>
               <span className="text-xs text-slate-400">Auto-refreshes every 15s</span>
             </div>
-            <KanbanBoard vendorId={VENDOR_ID} />
+            <KanbanBoard vendorId={vendorId} />
           </div>
         )}
 
@@ -82,7 +103,7 @@ export default function DashboardPage() {
                 ➕ Add Product
               </Button>
             </div>
-            <ProductManagement vendorId={VENDOR_ID} />
+            <ProductManagement vendorId={vendorId} />
           </div>
         )}
 
@@ -91,7 +112,7 @@ export default function DashboardPage() {
             <h2 className="text-lg font-semibold text-slate-800 mb-4">Add New Product</h2>
             <Card padding="lg" className="rounded-xl">
               <AddProductForm
-                vendorId={VENDOR_ID}
+                vendorId={vendorId}
                 onSuccess={() => setActiveTab('products')}
               />
             </Card>
