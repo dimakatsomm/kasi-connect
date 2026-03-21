@@ -41,8 +41,12 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 # Copy @prisma/engines so `prisma migrate deploy` can locate its query/migration engine binaries
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
+# Create uploads directory before switching to non-root user
+RUN mkdir -p /app/uploads
+
 # Non-root user for security
 RUN addgroup -g 1001 -S nodejs && adduser -S kasiapp -u 1001
+RUN chown kasiapp:nodejs /app/uploads
 USER kasiapp
 
 # SEED_MODE controls deploy-time seeding:

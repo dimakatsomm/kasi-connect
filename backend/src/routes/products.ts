@@ -11,7 +11,7 @@ import config from '../config';
 import logger from '../config/logger';
 
 const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads');
-fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch { /* directory may be pre-created in Docker */ }
 
 const router = Router();
 const upload = multer({
