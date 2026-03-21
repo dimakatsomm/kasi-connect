@@ -160,15 +160,26 @@ export async function handleMessage(
         await sendSectorPrompt(from);
     }
   } catch (err) {
+    const responseData = (err != null && typeof err === 'object' && 'response' in err)
+      ? (err as { response?: { data?: unknown } }).response?.data
+      : undefined;
     logger.error('Error handling message', {
       from,
       error: err instanceof Error ? err.message : String(err),
       stack: err instanceof Error ? err.stack : undefined,
+      responseData,
     });
-    await whatsappService.sendTextMessage(
-      from,
-      'Something went wrong on our end. Please try again in a moment 🙏'
-    );
+    try {
+      await whatsappService.sendTextMessage(
+        from,
+        'Something went wrong on our end. Please try again in a moment 🙏'
+      );
+    } catch (sendErr) {
+      logger.error('Failed to send error-recovery message', {
+        from,
+        error: sendErr instanceof Error ? sendErr.message : String(sendErr),
+      });
+    }
   }
 }
 

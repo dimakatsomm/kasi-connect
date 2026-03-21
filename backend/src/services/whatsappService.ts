@@ -55,26 +55,39 @@ async function callTwilio(MessagesParams: URLSearchParams): Promise<WhatsAppMess
     throw new Error('Twilio API base URL is not defined.');
   }
 
-  const response = await axios.post<TwilioMessageResponse>(
-    `${TWILIO_API_BASE}/Messages.json`,
-    MessagesParams.toString(),
-    {
-      auth: {
-        username: config.twilio.accountSid as string,
-        password: config.twilio.authToken as string,
-      },
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-    }
-  );
+  try {
+    const response = await axios.post<TwilioMessageResponse>(
+      `${TWILIO_API_BASE}/Messages.json`,
+      MessagesParams.toString(),
+      {
+        auth: {
+          username: config.twilio.accountSid as string,
+          password: config.twilio.authToken as string,
+        },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      }
+    );
 
-  logger.debug('Twilio WhatsApp message sent', {
-    to: MessagesParams.get('To'),
-    sid: response.data.sid,
-  });
+    logger.debug('Twilio WhatsApp message sent', {
+      to: MessagesParams.get('To'),
+      sid: response.data.sid,
+    });
 
-  return { messages: [{ id: response.data.sid }] };
+    return { messages: [{ id: response.data.sid }] };
+  } catch (err) {
+    const errData = axios.isAxiosError(err)
+      ? err.response?.data
+      : (err instanceof Error ? err.message : String(err));
+    logger.error('Failed to send Twilio WhatsApp message', {
+      to: MessagesParams.get('To'),
+      from: MessagesParams.get('From'),
+      status: axios.isAxiosError(err) ? err.response?.status : undefined,
+      error: errData,
+    });
+    throw err;
+  }
 }
 
 /**

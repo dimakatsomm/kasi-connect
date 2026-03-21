@@ -207,16 +207,16 @@ async function seedDemoData(subCats?: SubCategoryRefs) {
 
   console.log(`  ✔ Created ${products.count} products`);
 
-  // Demo vendor user (login: demo@kasiconnect.co.za or 27731234567 / demo1234)
+  // Demo vendor user (login: demo@kasiconnect.co.za or 27833361867 / demo1234)
   const passwordHash = await bcrypt.hash('demo1234', 12);
 
   const demoUser = await prisma.vendorUser.upsert({
     where: { email: 'demo@kasiconnect.co.za' },
-    update: { phone: '27731234567' },
+    update: { phone: '27833361867' },
     create: {
       vendor_id: vendor.id,
       email: 'demo@kasiconnect.co.za',
-      phone: '27731234567',
+      phone: '27833361867',
       password_hash: passwordHash,
       name: 'Mama Hazel',
       role: 'owner',
