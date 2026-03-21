@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Order, OrderStatus, Product, Vendor } from '@/types';
+import type { Order, OrderStatus, Product, Vendor, Category } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -69,4 +69,11 @@ export async function fetchVendors(): Promise<Vendor[]> {
 export async function fetchVendor(vendorId: string): Promise<Vendor> {
   const { data } = await apiClient.get(`/api/vendors/${vendorId}`);
   return data.vendor;
+}
+
+// ── Categories ────────────────────────────────────────────────────────────────
+
+export async function fetchCategories(): Promise<Category[]> {
+  const { data } = await apiClient.get('/api/categories');
+  return data.categories;
 }

@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 const { Decimal } = Prisma;
-import { buildOrderSummary, matchProducts } from '../src/services/productService';
+import { buildOrderSummary, matchProducts, clearCategoryCache } from '../src/services/productService';
 import type { MatchedItem } from '../src/types';
 
 // Mock the prisma client so matchProducts can be tested without a live database
@@ -10,12 +10,18 @@ jest.mock('../src/db', () => ({
     product: {
       findMany: jest.fn(),
     },
+    category: {
+      findMany: jest.fn(),
+    },
   },
 }));
 
 import prisma from '../src/db';
 type PrismaMock = {
   product: {
+    findMany: jest.Mock;
+  };
+  category: {
     findMany: jest.Mock;
   };
 };
@@ -33,6 +39,7 @@ function makeItem(
     product: {
       id: 'p0',
       vendor_id: 'v0',
+      sub_category_id: null,
       name,
       description: null,
       price: new Decimal(price),
@@ -98,6 +105,7 @@ describe('Product Service — matchProducts', () => {
       special_price: null,
       aliases: ['loaf', 'mkate'],
       vendor_id: 'v1',
+      sub_category_id: null,
       description: null,
       image_url: null,
       stock_level: 10,
@@ -114,6 +122,7 @@ describe('Product Service — matchProducts', () => {
       special_price: null,
       aliases: ['milk'],
       vendor_id: 'v1',
+      sub_category_id: null,
       description: null,
       image_url: null,
       stock_level: 10,
@@ -130,6 +139,7 @@ describe('Product Service — matchProducts', () => {
       special_price: null,
       aliases: ['coke', 'cola'],
       vendor_id: 'v1',
+      sub_category_id: 'sub-soft',
       description: null,
       image_url: null,
       stock_level: 10,
@@ -146,6 +156,7 @@ describe('Product Service — matchProducts', () => {
       special_price: null,
       aliases: ['pap', 'phutu'],
       vendor_id: 'v1',
+      sub_category_id: null,
       description: null,
       image_url: null,
       stock_level: 10,
@@ -159,6 +170,8 @@ describe('Product Service — matchProducts', () => {
 
   beforeEach(() => {
     mockedPrisma.product.findMany.mockResolvedValue(mockProducts);
+    mockedPrisma.category.findMany.mockResolvedValue([]);
+    clearCategoryCache();
   });
 
   test('matches exact product names', async () => {
@@ -204,5 +217,46 @@ describe('Product Service — matchProducts', () => {
     ];
     const { matched, unmatched } = await matchProducts('vendor1', parsedItems);
     expect(matched.length + unmatched.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('uses category-scoped matching when orderText contains category keywords', async () => {
+    mockedPrisma.category.findMany.mockResolvedValue([
+      {
+        id: 'cat-drinks',
+        name: 'Drinks',
+        keywords: ['drinks', 'drink'],
+        sub_categories: [
+          {
+            id: 'sub-soft',
+            category_id: 'cat-drinks',
+            name: 'Soft Drinks',
+            keywords: ['cold drink', 'cooldrink', 'coke'],
+          },
+        ],
+      },
+    ]);
+    clearCategoryCache();
+
+    const parsedItems = [{ quantity: 1, name: 'coke', raw: 'coke' }];
+    const { matched } = await matchProducts('vendor1', parsedItems, 'give me a cold drink');
+    expect(matched).toHaveLength(1);
+    expect(matched[0].product.name).toBe('Coca-Cola 500ml');
+  });
+
+  test('falls back to full catalogue when scoped search has no match', async () => {
+    mockedPrisma.category.findMany.mockResolvedValue([
+      {
+        id: 'cat-drinks',
+        name: 'Drinks',
+        keywords: ['drinks', 'drink'],
+        sub_categories: [],
+      },
+    ]);
+    clearCategoryCache();
+
+    const parsedItems = [{ quantity: 1, name: 'bread', raw: 'bread' }];
+    const { matched } = await matchProducts('vendor1', parsedItems, 'I want a drink and bread');
+    expect(matched).toHaveLength(1);
+    expect(matched[0].product.name).toBe('Bread');
   });
 });

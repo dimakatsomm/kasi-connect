@@ -68,6 +68,7 @@ router.post(
       stockLevel,
       lowStockThreshold,
       aliases,
+      subCategoryId,
     } = req.body as {
       vendorId: string;
       name: string;
@@ -76,6 +77,7 @@ router.post(
       stockLevel?: string | number;
       lowStockThreshold?: string | number;
       aliases?: string | string[];
+      subCategoryId?: string;
     };
 
     let imageUrl: string | null = null;
@@ -99,9 +101,16 @@ router.post(
     const lowStockThresholdInt = parseInt(String(lowStockThreshold ?? 5), 10);
 
     try {
+      const vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });
+      if (!vendor) {
+        res.status(404).json({ error: 'Vendor not found' });
+        return;
+      }
+
       const product = await prisma.product.create({
         data: {
           vendor_id: vendorId,
+          sub_category_id: subCategoryId || null,
           name,
           description,
           price: priceNum,
@@ -191,6 +200,14 @@ router.patch(
       data[field] = value as Prisma.ProductUpdateInput[K];
       return null;
     };
+
+    // Handle sub_category_id separately (UUID or null)
+    const subCatVal = readField('sub_category_id') as string | undefined;
+    if (subCatVal !== undefined) {
+      data.sub_category = subCatVal
+        ? { connect: { id: subCatVal } }
+        : { disconnect: true };
+    }
 
     const fieldErrors: string[] = [
       maybeAssign('name'),

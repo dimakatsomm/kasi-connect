@@ -16,7 +16,7 @@
  *  5. Return structured [ { quantity, raw, name } ]
  */
 
-import type { ParsedItem } from '../types';
+import type { ParsedItem, CategoryKeywordEntry } from '../types';
 
 // ── Number word maps ──────────────────────────────────────────────────────────
 
@@ -195,4 +195,34 @@ export function detectLanguage(
   if (/\b(i want|give me|i need|please)\b/.test(lower)) return 'english';
 
   return 'unknown';
+}
+
+/**
+ * Detect which category/sub-category IDs are relevant to the given text
+ * based on keyword matching.
+ *
+ * @param text  Raw or normalised order text
+ * @param entries  Array of category keyword entries (from DB)
+ * @returns  Array of matched sub-category IDs (or category IDs if no sub-category)
+ */
+export function detectCategories(
+  text: string,
+  entries: CategoryKeywordEntry[]
+): string[] {
+  const lower = normalise(text);
+  const matchedIds: Set<string> = new Set();
+
+  for (const entry of entries) {
+    for (const keyword of entry.keywords) {
+      const kw = keyword.toLowerCase();
+      // Word-boundary match: keyword appears as a standalone word/phrase
+      const re = new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+      if (re.test(lower)) {
+        matchedIds.add(entry.subCategoryId ?? entry.categoryId);
+        break; // one keyword hit per entry is enough
+      }
+    }
+  }
+
+  return Array.from(matchedIds);
 }

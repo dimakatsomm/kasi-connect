@@ -17,9 +17,30 @@ export interface Vendor {
   updated_at: string;
 }
 
+export interface Category {
+  id: string;
+  name: string;
+  description?: string;
+  keywords: string[];
+  sub_categories: SubCategory[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubCategory {
+  id: string;
+  category_id: string;
+  name: string;
+  description?: string;
+  keywords: string[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Product {
   id: string;
   vendor_id: string;
+  sub_category_id?: string;
   name: string;
   description?: string;
   price: number;
@@ -30,6 +51,7 @@ export interface Product {
   is_special: boolean;
   special_price?: number;
   aliases: string[];
+  sub_category?: SubCategory & { category?: Category };
   created_at: string;
   updated_at: string;
 }

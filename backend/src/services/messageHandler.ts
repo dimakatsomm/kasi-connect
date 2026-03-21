@@ -499,7 +499,8 @@ async function handleItemsState(from: string, text: string): Promise<void> {
 
   const { matched, ambiguous, unmatched } = await matchProducts(
     session.vendorId ?? '',
-    parsedItems
+    parsedItems,
+    text
   );
 
   if (ambiguous.length > 0) {

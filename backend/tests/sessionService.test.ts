@@ -130,6 +130,7 @@ describe('Session Service', () => {
             product: {
               id: 'p1',
               vendor_id: 'v1',
+              sub_category_id: null,
               name: 'Bread',
               description: null,
               price: new Decimal('15.00'),

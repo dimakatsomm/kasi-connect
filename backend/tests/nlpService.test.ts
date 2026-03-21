@@ -1,4 +1,5 @@
-import { parseOrderText, detectLanguage, normalise } from '../src/services/nlpService';
+import { parseOrderText, detectLanguage, normalise, detectCategories } from '../src/services/nlpService';
+import type { CategoryKeywordEntry } from '../src/types';
 
 describe('NLP Service — parseOrderText', () => {
   describe('English orders', () => {
@@ -152,5 +153,51 @@ describe('NLP Service — normalise', () => {
 
   test('collapses whitespace', () => {
     expect(normalise('  two   breads  ')).toBe('two breads');
+  });
+});
+
+describe('NLP Service — detectCategories', () => {
+  const entries: CategoryKeywordEntry[] = [
+    { categoryId: 'cat-food', subCategoryId: null, keywords: ['food', 'ukudla', 'dijo', 'kos'] },
+    { categoryId: 'cat-drinks', subCategoryId: null, keywords: ['drinks', 'drink', 'iziphuzo', 'dino'] },
+    { categoryId: 'cat-food', subCategoryId: 'sub-kota', keywords: ['kota', 'spatlho', 'quarter'] },
+    { categoryId: 'cat-drinks', subCategoryId: 'sub-soft', keywords: ['cold drink', 'cooldrink', 'fizzy', 'soft drink', 'coke'] },
+    { categoryId: 'cat-drinks', subCategoryId: 'sub-water', keywords: ['water', 'amanzi'] },
+  ];
+
+  test('detects category by English keyword', () => {
+    const result = detectCategories('I want some food', entries);
+    expect(result).toContain('cat-food');
+  });
+
+  test('detects category by isiZulu keyword', () => {
+    const result = detectCategories('ngifuna iziphuzo', entries);
+    expect(result).toContain('cat-drinks');
+  });
+
+  test('detects sub-category keyword', () => {
+    const result = detectCategories('give me a cold drink', entries);
+    expect(result).toContain('sub-soft');
+  });
+
+  test('detects water sub-category by Zulu keyword', () => {
+    const result = detectCategories('ngicela amanzi', entries);
+    expect(result).toContain('sub-water');
+  });
+
+  test('returns empty array when no keywords match', () => {
+    const result = detectCategories('xyzzy foo bar', entries);
+    expect(result).toHaveLength(0);
+  });
+
+  test('handles empty text', () => {
+    const result = detectCategories('', entries);
+    expect(result).toHaveLength(0);
+  });
+
+  test('detects multiple categories in one text', () => {
+    const result = detectCategories('I want food and a drink', entries);
+    expect(result).toContain('cat-food');
+    expect(result).toContain('cat-drinks');
   });
 });

@@ -2,6 +2,7 @@ import Fuse, { IFuseOptions } from 'fuse.js';
 import prisma from '../db';
 import logger from '../config/logger';
 import { decimalToNumber } from '../utils/prisma';
+import { detectCategories } from './nlpService';
 import type {
   ProductRow,
   ParsedItem,
@@ -10,6 +11,7 @@ import type {
   UnmatchedItem,
   MatchProductsResult,
   OrderSummary,
+  CategoryKeywordEntry,
 } from '../types';
 
 type SearchableProduct = ProductRow & { aliases: string[] };
@@ -29,7 +31,8 @@ const FUSE_OPTIONS: IFuseOptions<SearchableProduct> = {
 };
 
 /**
- * Load all available products for a vendor from the database.
+ * Load all available products for a vendor from the database,
+ * including sub-category and category relations.
  * @param vendorId
  */
 export async function getVendorProducts(
@@ -40,19 +43,72 @@ export async function getVendorProducts(
       vendor_id: vendorId,
       is_available: true,
     },
+    include: {
+      sub_category: {
+        include: { category: true },
+      },
+    },
     orderBy: { name: 'asc' },
   });
 }
 
 /**
+ * Load all category keyword entries for NLP detection. Cached at process-level
+ * since categories are admin-managed and rarely change.
+ */
+let _cachedEntries: CategoryKeywordEntry[] | null = null;
+
+export async function getCategoryKeywordEntries(): Promise<CategoryKeywordEntry[]> {
+  if (_cachedEntries) return _cachedEntries;
+
+  const categories = await prisma.category.findMany({
+    include: { sub_categories: true },
+  });
+
+  const entries: CategoryKeywordEntry[] = [];
+  for (const cat of categories) {
+    // Category-level keywords
+    if (cat.keywords.length > 0) {
+      entries.push({
+        categoryId: cat.id,
+        subCategoryId: null,
+        keywords: cat.keywords,
+      });
+    }
+    // Sub-category-level keywords
+    for (const sub of cat.sub_categories) {
+      if (sub.keywords.length > 0) {
+        entries.push({
+          categoryId: cat.id,
+          subCategoryId: sub.id,
+          keywords: sub.keywords,
+        });
+      }
+    }
+  }
+
+  _cachedEntries = entries;
+  return entries;
+}
+
+/** Clear the cached category keyword entries (useful for tests). */
+export function clearCategoryCache(): void {
+  _cachedEntries = null;
+}
+
+/**
  * Match a list of parsed order items against the vendor's product catalogue.
+ * Uses category-scoped search when category keywords are detected in the
+ * original order text, falling back to full-catalogue search.
  *
  * @param vendorId
  * @param parsedItems
+ * @param orderText  Optional raw order text for category detection
  */
 export async function matchProducts(
   vendorId: string,
-  parsedItems: ParsedItem[]
+  parsedItems: ParsedItem[],
+  orderText?: string
 ): Promise<MatchProductsResult> {
   const products = await getVendorProducts(vendorId);
 
@@ -65,19 +121,41 @@ export async function matchProducts(
     };
   }
 
-  // Build Fuse index
+  // Build Fuse index for full catalogue
   const searchableProducts: SearchableProduct[] = products.map((product) => ({
     ...product,
     aliases: product.aliases ?? [],
   }));
-  const fuse = new Fuse(searchableProducts, FUSE_OPTIONS);
+  const fullFuse = new Fuse(searchableProducts, FUSE_OPTIONS);
+
+  // Detect category scoping if orderText is provided
+  let detectedSubCategoryIds: string[] = [];
+  if (orderText) {
+    const entries = await getCategoryKeywordEntries();
+    detectedSubCategoryIds = detectCategories(orderText, entries);
+  }
+
+  // Build a scoped Fuse index if we detected any categories
+  let scopedFuse: Fuse<SearchableProduct> | null = null;
+  if (detectedSubCategoryIds.length > 0) {
+    const scopedProducts = searchableProducts.filter(
+      (p) => p.sub_category_id && detectedSubCategoryIds.includes(p.sub_category_id)
+    );
+    if (scopedProducts.length > 0) {
+      scopedFuse = new Fuse(scopedProducts, FUSE_OPTIONS);
+    }
+  }
 
   const matched: MatchedItem[] = [];
   const ambiguous: AmbiguousItem[] = [];
   const unmatched: UnmatchedItem[] = [];
 
   for (const item of parsedItems) {
-    const searchResults = fuse.search(item.name);
+    // Try scoped search first, then fall back to full catalogue
+    let searchResults = scopedFuse ? scopedFuse.search(item.name) : [];
+    if (searchResults.length === 0) {
+      searchResults = fullFuse.search(item.name);
+    }
 
     if (searchResults.length === 0) {
       unmatched.push({ item });

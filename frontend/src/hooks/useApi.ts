@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchOrders, updateOrderStatus, fetchProducts, updateProduct, deleteProduct } from '@/lib/api';
+import { fetchOrders, updateOrderStatus, fetchProducts, updateProduct, deleteProduct, fetchCategories } from '@/lib/api';
 import type { OrderStatus, Product } from '@/types';
 
 // ── Orders ────────────────────────────────────────────────────────────────────
@@ -57,5 +57,15 @@ export function useDeleteProduct() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
     },
+  });
+}
+
+// ── Categories ────────────────────────────────────────────────────────────────
+
+export function useCategories() {
+  return useQuery({
+    queryKey: ['categories'],
+    queryFn: fetchCategories,
+    staleTime: 5 * 60 * 1000, // categories rarely change
   });
 }

@@ -4,6 +4,8 @@ import type {
   Customer as PrismaCustomer,
   Order as PrismaOrder,
   OrderItem as PrismaOrderItem,
+  Category as PrismaCategory,
+  SubCategory as PrismaSubCategory,
   VendorType as PrismaVendorType,
   FulfilmentType as PrismaFulfilmentType,
   OrderStatus as PrismaOrderStatus,
@@ -22,6 +24,16 @@ export type ProductRow = PrismaProduct;
 export type CustomerRow = PrismaCustomer;
 export type OrderRow = PrismaOrder;
 export type OrderItemRow = PrismaOrderItem;
+export type CategoryRow = PrismaCategory;
+export type SubCategoryRow = PrismaSubCategory;
+
+// -- Category keyword entry (for NLP detection) --------------------------------
+
+export interface CategoryKeywordEntry {
+  categoryId: string;
+  subCategoryId: string | null;
+  keywords: string[];
+}
 
 // -- NLP types -----------------------------------------------------------------
 

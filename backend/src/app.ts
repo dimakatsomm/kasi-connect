@@ -15,6 +15,7 @@ import webhookRouter from './routes/webhook';
 import ordersRouter from './routes/orders';
 import productsRouter from './routes/products';
 import vendorsRouter from './routes/vendors';
+import categoriesRouter from './routes/categories';
 
 const app: Application = express();
 
@@ -52,6 +53,7 @@ app.use('/webhook', webhookRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/products', productsRouter);
 app.use('/api/vendors', vendorsRouter);
+app.use('/api/categories', categoriesRouter);
 
 // ── 404 handler ───────────────────────────────────────────────────────────────
 app.use((_req: Request, res: Response): void => {

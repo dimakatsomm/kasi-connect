@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
 import type { Product } from '@/types';
-import { useProducts, useUpdateProduct } from '@/hooks/useApi';
+import { useProducts, useUpdateProduct, useCategories } from '@/hooks/useApi';
 import { publishDailySpecial } from '@/lib/api';
 import { Button, Badge, Card, Spinner, Modal, Textarea } from '@/components/ui';
 
@@ -13,10 +13,12 @@ interface ProductManagementProps {
 
 export function ProductManagement({ vendorId }: ProductManagementProps) {
   const { data: products = [], isLoading, error } = useProducts(vendorId);
+  const { data: categories = [] } = useCategories();
   const updateProduct = useUpdateProduct();
   const [specialModal, setSpecialModal] = useState<string | null>(null);
   const [specialMessage, setSpecialMessage] = useState('');
   const [broadcastLoading, setBroadcastLoading] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState('');
 
   if (isLoading) {
     return <Spinner className="h-32" />;
@@ -55,6 +57,18 @@ export function ProductManagement({ vendorId }: ProductManagementProps) {
     (p) => p.stock_level <= p.low_stock_threshold && p.is_available
   );
 
+  // Filter products by selected category
+  const filteredProducts = categoryFilter
+    ? products.filter((p) => p.sub_category?.category?.id === categoryFilter)
+    : products;
+
+  const getCategoryLabel = (product: Product): string | null => {
+    if (!product.sub_category) return null;
+    const catName = product.sub_category.category?.name;
+    const subName = product.sub_category.name;
+    return catName ? `${catName} › ${subName}` : subName;
+  };
+
   return (
     <div>
       {/* Low stock alert */}
@@ -67,9 +81,27 @@ export function ProductManagement({ vendorId }: ProductManagementProps) {
         </div>
       )}
 
+      {/* Category filter */}
+      {categories.length > 0 && (
+        <div className="mb-4">
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+          >
+            <option value="">All Categories</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Product grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {products.map((product) => (
+        {filteredProducts.map((product) => (
           <Card
             key={product.id}
             className={`hover:shadow-md transition-shadow ${
@@ -101,6 +133,13 @@ export function ProductManagement({ vendorId }: ProductManagementProps) {
                   : Number(product.price).toFixed(2)}
               </span>
             </div>
+
+            {/* Category badge */}
+            {getCategoryLabel(product) && (
+              <Badge color="slate">
+                {getCategoryLabel(product)}
+              </Badge>
+            )}
 
             {product.is_special && (
               <Badge color="amber">
