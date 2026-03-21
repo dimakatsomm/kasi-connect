@@ -5,6 +5,7 @@ import Image from 'next/image';
 import type { Product } from '@/types';
 import { useProducts, useUpdateProduct } from '@/hooks/useApi';
 import { publishDailySpecial } from '@/lib/api';
+import { Button, Badge, Card, Spinner, Modal, Textarea } from '@/components/ui';
 
 interface ProductManagementProps {
   vendorId: string;
@@ -18,11 +19,7 @@ export function ProductManagement({ vendorId }: ProductManagementProps) {
   const [broadcastLoading, setBroadcastLoading] = useState(false);
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-32">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500" />
-      </div>
-    );
+    return <Spinner className="h-32" />;
   }
 
   if (error) {
@@ -73,9 +70,9 @@ export function ProductManagement({ vendorId }: ProductManagementProps) {
       {/* Product grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {products.map((product) => (
-          <div
+          <Card
             key={product.id}
-            className={`bg-white rounded-lg border p-4 shadow-sm ${
+            className={`hover:shadow-md transition-shadow ${
               !product.is_available ? 'opacity-60' : ''
             }`}
           >
@@ -91,14 +88,14 @@ export function ProductManagement({ vendorId }: ProductManagementProps) {
                 />
               </div>
             ) : (
-              <div className="w-full h-36 bg-gray-100 rounded-md mb-3 flex items-center justify-center text-gray-400 text-3xl">
+              <div className="w-full h-36 bg-slate-100 rounded-md mb-3 flex items-center justify-center text-slate-400 text-3xl">
                 🛒
               </div>
             )}
 
             <div className="flex justify-between items-start mb-1">
-              <h3 className="font-semibold text-gray-800">{product.name}</h3>
-              <span className="text-orange-600 font-bold text-sm">
+              <h3 className="font-semibold text-slate-800">{product.name}</h3>
+              <span className="text-emerald-700 font-bold text-sm">
                 R{product.is_special && product.special_price
                   ? Number(product.special_price).toFixed(2)
                   : Number(product.price).toFixed(2)}
@@ -106,13 +103,13 @@ export function ProductManagement({ vendorId }: ProductManagementProps) {
             </div>
 
             {product.is_special && (
-              <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
+              <Badge color="amber">
                 🌟 Special
-              </span>
+              </Badge>
             )}
 
             {/* Stock level */}
-            <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+            <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
               <span
                 className={`inline-block w-2 h-2 rounded-full ${
                   product.stock_level <= product.low_stock_threshold
@@ -128,60 +125,59 @@ export function ProductManagement({ vendorId }: ProductManagementProps) {
 
             {/* Actions */}
             <div className="mt-3 flex gap-2">
-              <button
+              <Button
                 onClick={() => handleToggleAvailability(product)}
-                className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-colors ${
-                  product.is_available
-                    ? 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                    : 'bg-green-100 hover:bg-green-200 text-green-700'
-                }`}
+                variant={product.is_available ? 'ghost' : 'accent-solid'}
+                size="xs"
+                className="flex-1"
               >
                 {product.is_available ? 'Disable' : 'Enable'}
-              </button>
+              </Button>
 
-              <button
+              <Button
                 onClick={() => setSpecialModal(product.id)}
-                className="flex-1 text-xs py-1.5 rounded-md font-medium bg-orange-100 hover:bg-orange-200 text-orange-700 transition-colors"
+                variant="accent"
+                size="xs"
+                className="flex-1"
               >
                 🌟 Special
-              </button>
+              </Button>
             </div>
-          </div>
+          </Card>
         ))}
       </div>
 
       {/* Special broadcast modal */}
-      {specialModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
-            <h3 className="text-lg font-bold text-gray-800 mb-3">📢 Broadcast Daily Special</h3>
-            <p className="text-sm text-gray-500 mb-3">
-              This message will be sent to all customers who ordered in the last 30 days.
-            </p>
-            <textarea
-              value={specialMessage}
-              onChange={(e) => setSpecialMessage(e.target.value)}
-              placeholder="Today's special: Pap and wors for only R35! 🔥"
-              className="w-full border rounded-lg p-3 text-sm resize-none h-24 focus:outline-none focus:ring-2 focus:ring-orange-400"
-            />
-            <div className="flex gap-3 mt-4">
-              <button
-                onClick={() => setSpecialModal(null)}
-                className="flex-1 py-2 rounded-lg border text-gray-600 hover:bg-gray-50 text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleBroadcastSpecial(specialModal)}
-                disabled={broadcastLoading || !specialMessage.trim()}
-                className="flex-1 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold disabled:opacity-50 transition-colors"
-              >
-                {broadcastLoading ? 'Sending...' : 'Send to Customers'}
-              </button>
-            </div>
-          </div>
+      <Modal open={!!specialModal} onClose={() => setSpecialModal(null)}>
+        <h3 className="text-lg font-bold text-slate-800 mb-3">📢 Broadcast Daily Special</h3>
+        <p className="text-sm text-slate-500 mb-3">
+          This message will be sent to all customers who ordered in the last 30 days.
+        </p>
+        <Textarea
+          value={specialMessage}
+          onChange={(e) => setSpecialMessage(e.target.value)}
+          placeholder="Today's special: Pap and wors for only R35! 🔥"
+          className="h-24"
+        />
+        <div className="flex gap-3 mt-4">
+          <Button
+            onClick={() => setSpecialModal(null)}
+            variant="secondary"
+            size="sm"
+            className="flex-1"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => specialModal && handleBroadcastSpecial(specialModal)}
+            disabled={broadcastLoading || !specialMessage.trim()}
+            size="sm"
+            className="flex-1"
+          >
+            {broadcastLoading ? 'Sending...' : 'Send to Customers'}
+          </Button>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

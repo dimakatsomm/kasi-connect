@@ -74,9 +74,9 @@ export interface DailySpecial {
 
 // Kanban column definitions
 export const KANBAN_COLUMNS: { status: OrderStatus; label: string; colour: string }[] = [
-  { status: 'confirmed', label: 'New', colour: 'bg-blue-100 border-blue-300' },
-  { status: 'preparing', label: 'Preparing', colour: 'bg-yellow-100 border-yellow-300' },
-  { status: 'ready', label: 'Ready', colour: 'bg-green-100 border-green-300' },
+  { status: 'confirmed', label: 'New', colour: 'bg-sky-50 border-sky-300' },
+  { status: 'preparing', label: 'Preparing', colour: 'bg-amber-50 border-amber-300' },
+  { status: 'ready', label: 'Ready', colour: 'bg-emerald-50 border-emerald-400' },
 ];
 
 // Status transitions for the vendor dashboard buttons
