@@ -17,10 +17,12 @@ export async function startConsumer(): Promise<void> {
   await consumer.connect();
 
   await consumer.subscribe({
-    topics: [
-      config.kafka.topics.orderReady,
-      config.kafka.topics.specialsBroadcast,
-    ],
+    topic: config.kafka.topics.orderReady,
+    fromBeginning: false,
+  });
+
+  await consumer.subscribe({
+    topic: config.kafka.topics.specialsBroadcast,
     fromBeginning: false,
   });
 

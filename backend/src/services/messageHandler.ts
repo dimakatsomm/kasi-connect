@@ -28,6 +28,73 @@ For example:
 
 Or send a 🎤 voice note!`;
 
+const RESTART_PATTERN =
+  /^(hi|hello|hey|howzit|sawubona|dumelang|dumela|restart|start over|cancel|menu)$/i;
+
+const COLLECTION_KEYWORDS = new Set([
+  'collect',
+  'collection',
+  'pickup',
+  'pick up',
+  'pick-up',
+]);
+const DELIVERY_KEYWORDS = new Set([
+  'delivery',
+  'deliver',
+  'bring it',
+  'bring-it',
+]);
+
+const ACCEPT_KEYWORDS = new Set([
+  'yes',
+  'accept',
+  'ok',
+  'okay',
+  'yebo',
+  'ee',
+  'ya',
+  'can do',
+  'sure',
+]);
+const DECLINE_KEYWORDS = new Set([
+  'no',
+  'reject',
+  'cancel',
+  'cannot',
+  "can't",
+  'cha',
+  'decline',
+]);
+
+function isRestartCommand(text: string): boolean {
+  return RESTART_PATTERN.test(text.trim());
+}
+
+function extractSingleDigit(text: string): string | null {
+  const digits = text.replace(/\D/g, '');
+  return digits.length === 1 ? digits : null;
+}
+
+function isCollectionChoice(text: string): boolean {
+  const lower = text.trim().toLowerCase();
+  return COLLECTION_KEYWORDS.has(lower) || extractSingleDigit(lower) === '1';
+}
+
+function isDeliveryChoice(text: string): boolean {
+  const lower = text.trim().toLowerCase();
+  return DELIVERY_KEYWORDS.has(lower) || extractSingleDigit(lower) === '2';
+}
+
+function isAcceptChoice(text: string): boolean {
+  const lower = text.trim().toLowerCase();
+  return ACCEPT_KEYWORDS.has(lower) || extractSingleDigit(lower) === '1';
+}
+
+function isDeclineChoice(text: string): boolean {
+  const lower = text.trim().toLowerCase();
+  return DECLINE_KEYWORDS.has(lower) || extractSingleDigit(lower) === '2';
+}
+
 /**
  * Main entry point — handle an inbound WhatsApp message.
  *
@@ -108,10 +175,7 @@ export async function handleMessage(
   }
 
   // ── Global RESTART handler — reset session from any non-initial state ─────
-  if (
-    session.state !== SESSION_STATES.AWAITING_SECTOR &&
-    /^(hi|hello|hey|howzit|sawubona|dumelang|dumela|restart|start over|cancel|menu)$/i.test(trimmedText)
-  ) {
+  if (isRestartCommand(trimmedText)) {
     await sessionService.resetSession(from);
     await sendSectorPrompt(from);
     return;
@@ -788,23 +852,30 @@ async function handleFulfilmentState(
 
   const normalised = text.toLowerCase().trim();
 
-  if (['collect', 'collection', 'pickup', 'pick up'].includes(normalised)) {
+  if (isCollectionChoice(text)) {
     await placeOrder(from, 'collection', null);
-  } else if (['delivery', 'deliver', 'bring it'].includes(normalised)) {
+    return;
+  }
+
+  if (isDeliveryChoice(text)) {
     await sessionService.updateSession(from, { fulfilmentType: 'delivery' });
     await whatsappService.sendTextMessage(
       from,
       '📍 Please share your delivery address or drop a 📌 location pin:'
     );
-  } else if (session.fulfilmentType === 'delivery') {
+    return;
+  }
+
+  if (session.fulfilmentType === 'delivery') {
     // Assume the message is their delivery address
     await placeOrder(from, 'delivery', text);
-  } else {
-    await whatsappService.sendTextMessage(
-      from,
-      'Please choose: reply *COLLECT* or *DELIVERY*'
-    );
+    return;
   }
+
+  await whatsappService.sendTextMessage(
+    from,
+    'Please choose: reply *COLLECT* or *DELIVERY*'
+  );
 }
 
 // ── Vendor response handler ───────────────────────────────────────────────────
@@ -948,6 +1019,18 @@ async function handleVendorMessage(
     return;
   }
 
+  const readyButtonMatch = normalised.match(/^mark_ready_(.+)$/);
+  if (readyButtonMatch) {
+    await markVendorOrderReady(vendorPhone, vendorId, readyButtonMatch[1]);
+    return;
+  }
+
+  if (/^(ready|mark ready|done)\b/.test(normalised)) {
+    const identifier = trimmed.replace(/^(ready|mark ready|done)\s*/i, '');
+    await markVendorOrderReady(vendorPhone, vendorId, identifier);
+    return;
+  }
+
   // ── 4. Accept / decline pending orders ────────────────────────────────────
   const pendingOrder = await prisma.order.findFirst({
     where: {
@@ -977,8 +1060,9 @@ async function handleVendorMessage(
     logger.error('Pending order has no customer phone', { orderId: pendingOrder.id });
     return;
   }
+  const shortPendingId = pendingOrder.id.slice(-8).toUpperCase();
 
-  if (['yes', 'accept', 'ok', 'yebo', 'ee', 'ya', 'can do'].includes(normalised)) {
+  if (isAcceptChoice(text)) {
     // Vendor accepts — confirm the order
     await orderService.updateOrderStatus(pendingOrder.id, 'confirmed');
 
@@ -998,8 +1082,13 @@ async function handleVendorMessage(
 
     await whatsappService.sendButtonMessage(
       vendorPhone,
-      `✅ Order #${pendingOrder.id.slice(-8).toUpperCase()} confirmed! Please start preparing.`,
-      [{ id: `chat_customer_${pendingOrder.id}`, title: '💬 Chat customer' }]
+      `✅ Order #${shortPendingId} confirmed! Please start preparing.
+
+Use the shortcuts below or reply *READY ${shortPendingId.slice(-4)}* when the order is done.`,
+      [
+        { id: `mark_ready_${pendingOrder.id}`, title: '✅ Mark ready' },
+        { id: `chat_customer_${pendingOrder.id}`, title: '💬 Chat customer' },
+      ]
     );
 
     // Notify the customer
@@ -1013,15 +1102,15 @@ async function handleVendorMessage(
 
     await whatsappService.sendTextMessage(
       customerPhone,
-      `✅ *Order Accepted!*\n\nOrder #${pendingOrder.id.slice(-8).toUpperCase()} has been accepted by the vendor!${queueMsg}\n\nWe'll notify you when it's ready! 🎉`
+      `✅ *Order Accepted!*\n\nOrder #${shortPendingId} has been accepted by the vendor!${queueMsg}\n\nWe'll notify you when it's ready! 🎉`
     );
-  } else if (['no', 'reject', 'cancel', 'cannot', 'can\'t', 'cha'].includes(normalised)) {
+  } else if (isDeclineChoice(text)) {
     // Vendor rejects
     await orderService.updateOrderStatus(pendingOrder.id, 'cancelled');
 
     await whatsappService.sendTextMessage(
       vendorPhone,
-      `❌ Order #${pendingOrder.id.slice(-8).toUpperCase()} has been declined.`
+      `❌ Order #${shortPendingId} has been declined.`
     );
 
     // Notify the customer
@@ -1032,12 +1121,12 @@ async function handleVendorMessage(
 
     await whatsappService.sendTextMessage(
       customerPhone,
-      `😔 Sorry, the vendor is unable to fulfil your order #${pendingOrder.id.slice(-8).toUpperCase()} right now.\n\nSend "Hi" to start a new order.`
+      `😔 Sorry, the vendor is unable to fulfil your order #${shortPendingId} right now.\n\nSend "Hi" to start a new order.`
     );
   } else {
     await whatsappService.sendTextMessage(
       vendorPhone,
-      `📦 You have a pending order #${pendingOrder.id.slice(-8).toUpperCase()}.\n\nReply *YES* to accept or *NO* to decline.`
+      `📦 You have a pending order #${shortPendingId}.\n\nReply *YES* to accept or *NO* to decline.`
     );
   }
 }
@@ -1048,6 +1137,88 @@ async function handleVendorMessage(
  * Attempt to relay a customer message to a vendor who has an active chat with them.
  * Returns true if the message was relayed, false otherwise.
  */
+async function markVendorOrderReady(
+  vendorPhone: string,
+  vendorId: string,
+  rawIdentifier?: string
+): Promise<void> {
+  const statusFilter: Array<'confirmed' | 'preparing'> = ['confirmed', 'preparing'];
+  const openOrders = await prisma.order.findMany({
+    where: { vendor_id: vendorId, status: { in: statusFilter } },
+    orderBy: { created_at: 'asc' },
+  });
+
+  if (openOrders.length === 0) {
+    await whatsappService.sendTextMessage(
+      vendorPhone,
+      'There are no accepted orders waiting to be marked ready.'
+    );
+    return;
+  }
+
+  const normalizedIdentifier = (rawIdentifier ?? '').trim().toLowerCase();
+  const strippedIdentifier = normalizedIdentifier.replace(/[^a-z0-9]/gi, '');
+
+  const findById = (id: string): typeof openOrders[number] | undefined =>
+    openOrders.find((o) => o.id.toLowerCase() === id.toLowerCase());
+
+  const findBySuffix = (suffix: string): typeof openOrders[number] | undefined => {
+    const cleanedSuffix = suffix.replace(/[^a-z0-9]/gi, '');
+    if (cleanedSuffix.length < 3) return undefined;
+    return openOrders.find((o) =>
+      o.id.replace(/-/g, '').toLowerCase().endsWith(cleanedSuffix)
+    );
+  };
+
+  let order: (typeof openOrders)[number] | undefined;
+
+  if (normalizedIdentifier) {
+    order = findById(normalizedIdentifier) ?? findBySuffix(strippedIdentifier);
+    if (!order && normalizedIdentifier.startsWith('order#')) {
+      order = findBySuffix(normalizedIdentifier.slice('order#'.length));
+    }
+    if (!order) {
+      await whatsappService.sendTextMessage(
+        vendorPhone,
+        `I couldn't find an active order matching "${rawIdentifier}". Reply *READY <last 4 digits>* (e.g. READY ABCD).`
+      );
+      return;
+    }
+  } else if (openOrders.length === 1) {
+    order = openOrders[0];
+  } else {
+    const hints = openOrders
+      .slice(0, 5)
+      .map((o) => `• #${o.id.slice(-8).toUpperCase()} (reply READY ${o.id.slice(-4).toUpperCase()})`)
+      .join('\n');
+    await whatsappService.sendTextMessage(
+      vendorPhone,
+      `You have ${openOrders.length} orders in progress. Please specify which one is ready:\n${hints}`
+    );
+    return;
+  }
+
+  if (!order) return;
+
+  try {
+    await orderService.updateOrderStatus(order.id, 'ready');
+    await whatsappService.sendTextMessage(
+      vendorPhone,
+      `✅ Order #${order.id.slice(-8).toUpperCase()} marked ready! The customer will be notified shortly.`
+    );
+  } catch (err) {
+    logger.error('Failed to mark order ready via WhatsApp', {
+      vendorId,
+      orderId: order.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    await whatsappService.sendTextMessage(
+      vendorPhone,
+      'Something went wrong while marking the order ready. Please try again or use the dashboard.'
+    );
+  }
+}
+
 async function relayChatToVendor(
   customerPhone: string,
   text: string,
@@ -1242,3 +1413,4 @@ async function handleVoiceNote(
     return '';
   }
 }
+

@@ -334,7 +334,7 @@ async function seedDemoData(subCats?: SubCategoryRefs) {
 
   await seedVendor(
     {
-      name: "Shoprite Spaza - Thatchfield",
+      name: "Shopright Spaza - Thatchfield",
       type: 'retail',
       phone: '27810000003',
       whatsapp_number: '27810000003',
