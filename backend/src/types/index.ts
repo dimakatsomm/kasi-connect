@@ -4,6 +4,8 @@ import type {
   Customer as PrismaCustomer,
   Order as PrismaOrder,
   OrderItem as PrismaOrderItem,
+  Category as PrismaCategory,
+  SubCategory as PrismaSubCategory,
   VendorType as PrismaVendorType,
   FulfilmentType as PrismaFulfilmentType,
   OrderStatus as PrismaOrderStatus,
@@ -22,6 +24,16 @@ export type ProductRow = PrismaProduct;
 export type CustomerRow = PrismaCustomer;
 export type OrderRow = PrismaOrder;
 export type OrderItemRow = PrismaOrderItem;
+export type CategoryRow = PrismaCategory;
+export type SubCategoryRow = PrismaSubCategory;
+
+// -- Category keyword entry (for NLP detection) --------------------------------
+
+export interface CategoryKeywordEntry {
+  categoryId: string;
+  subCategoryId: string | null;
+  keywords: string[];
+}
 
 // -- NLP types -----------------------------------------------------------------
 
@@ -77,10 +89,35 @@ export interface PendingClarification {
   unmatched: UnmatchedItem[];
 }
 
+export type VendorSector = 'spaza' | 'restaurant';
+
+export interface NearbyVendor {
+  id: string;
+  name: string;
+  type: VendorType;
+  distance: number; // km
+}
+
+/**
+ * Vendor-side session stored in Redis (kc:vendor:<phone>).
+ * Tracks active chat with a customer.
+ */
+export interface VendorSession {
+  vendorId: string;
+  activeCustomerPhone: string | null;
+  activeOrderId: string | null;
+  updatedAt: number;
+}
+
 export interface Session {
   phone: string;
   vendorId: string | null;
   state: string; // SessionState union — kept as string to avoid circular dep
+  sector: VendorSector | null;
+  customerLatitude: number | null;
+  customerLongitude: number | null;
+  nearbyVendors: NearbyVendor[] | null;
+  pendingOrderId: string | null; // order awaiting vendor confirmation
   items: MatchedItem[];
   pendingClarification: PendingClarification | null;
   fulfilmentType: FulfilmentType | null;
@@ -127,6 +164,13 @@ export interface WhatsAppAudioContent {
   mime_type?: string;
 }
 
+export interface WhatsAppLocationContent {
+  latitude: number;
+  longitude: number;
+  name?: string;
+  address?: string;
+}
+
 export interface WhatsAppButtonReply {
   id: string;
   title: string;
@@ -151,6 +195,7 @@ export interface WhatsAppMessage {
   text?: WhatsAppTextContent;
   audio?: WhatsAppAudioContent;
   interactive?: WhatsAppInteractiveContent;
+  location?: WhatsAppLocationContent;
 }
 
 export interface WhatsAppWebhookBody {

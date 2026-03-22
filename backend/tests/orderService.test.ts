@@ -140,6 +140,7 @@ describe('Order Service — createOrder', () => {
   const mockProduct = {
     id: 'p1',
     vendor_id: 'v1',
+    sub_category_id: null,
     name: 'Bread',
     price: new Decimal('15.00'),
     special_price: null,

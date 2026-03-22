@@ -42,12 +42,14 @@ jobs:
     uses: ./.github/workflows/deploy-gcp-environment.yml
     with:
       environment: staging
-      gke_cluster_name: ${{ secrets.GKE_CLUSTER_NAME_STAGING }}
     secrets:
+      GKE_CLUSTER_NAME: ${{ secrets.GKE_CLUSTER_NAME_STAGING }}
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_REGION: ${{ secrets.GCP_REGION }}
       GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
       GAR_REPOSITORY: ${{ secrets.GAR_REPOSITORY }}
+      TF_STATE_BUCKET_GCP: ${{ secrets.TF_STATE_BUCKET_GCP }}
+      TF_STATE_PREFIX_GCP: ${{ secrets.TF_STATE_PREFIX_GCP }}
       DB_HOST: ${{ secrets.DB_HOST }}
       DB_PORT: ${{ secrets.DB_PORT }}
       DB_NAME: ${{ secrets.DB_NAME }}
@@ -66,7 +68,8 @@ jobs:
       TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
       TWILIO_WHATSAPP_FROM: ${{ secrets.TWILIO_WHATSAPP_FROM }}
       OBS_BUCKET: ${{ secrets.OBS_BUCKET }}
-      NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      SEED_MODE: ${{ secrets.SEED_MODE }}
 
   production:
     if: |
@@ -76,12 +79,14 @@ jobs:
     uses: ./.github/workflows/deploy-gcp-environment.yml
     with:
       environment: production
-      gke_cluster_name: ${{ secrets.GKE_CLUSTER_NAME_PRODUCTION }}
     secrets:
+      GKE_CLUSTER_NAME: ${{ secrets.GKE_CLUSTER_NAME_PRODUCTION }}
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_REGION: ${{ secrets.GCP_REGION }}
       GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
       GAR_REPOSITORY: ${{ secrets.GAR_REPOSITORY }}
+      TF_STATE_BUCKET_GCP: ${{ secrets.TF_STATE_BUCKET_GCP }}
+      TF_STATE_PREFIX_GCP: ${{ secrets.TF_STATE_PREFIX_GCP }}
       DB_HOST: ${{ secrets.DB_HOST }}
       DB_PORT: ${{ secrets.DB_PORT }}
       DB_NAME: ${{ secrets.DB_NAME }}
@@ -100,4 +105,3 @@ jobs:
       TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
       TWILIO_WHATSAPP_FROM: ${{ secrets.TWILIO_WHATSAPP_FROM }}
       OBS_BUCKET: ${{ secrets.OBS_BUCKET }}
-      NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}

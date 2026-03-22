@@ -1,18 +1,36 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { KanbanBoard } from '@/components/orders/KanbanBoard';
 import { ProductManagement } from '@/components/products/ProductManagement';
 import { AddProductForm } from '@/components/products/AddProductForm';
-
-// In production, vendorId would come from auth session.
-// For the MVP demo, we use an env var or a hardcoded placeholder.
-const VENDOR_ID = process.env.NEXT_PUBLIC_VENDOR_ID || 'demo-vendor-id';
+import { Button, Card } from '@/components/ui';
+import { useAuth } from '@/contexts/AuthContext';
 
 type Tab = 'orders' | 'products' | 'add-product';
 
 export default function DashboardPage() {
+  const { user, loading, logout } = useAuth();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>('orders');
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push('/login');
+    }
+  }, [loading, user, router]);
+
+  if (loading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <p className="text-slate-500">Loading…</p>
+      </div>
+    );
+  }
+
+  const vendorId = user.vendorId;
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'orders', label: 'Orders', icon: '📋' },
@@ -21,26 +39,31 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <header className="bg-orange-500 text-white shadow-md">
+      <header className="bg-emerald-700 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-2xl">🛍️</span>
             <div>
-              <h1 className="text-xl font-bold">KasiConnect</h1>
-              <p className="text-orange-100 text-xs">Vendor Dashboard</p>
+              <h1 className="text-xl font-bold tracking-tight">KasiConnect</h1>
+              <p className="text-emerald-200 text-xs">Vendor Dashboard</p>
             </div>
           </div>
-          <div className="text-right text-xs text-orange-100">
-            <div className="font-medium">Order Management</div>
-            <div className="opacity-75">WhatsApp Ordering Platform</div>
+          <div className="text-right text-xs text-emerald-200">
+            <div className="font-medium">{user.vendorName}</div>
+            <button
+              onClick={logout}
+              className="text-emerald-300 hover:text-white transition-colors mt-0.5"
+            >
+              Sign out
+            </button>
           </div>
         </div>
       </header>
 
       {/* Tab navigation */}
-      <nav className="bg-white border-b shadow-sm sticky top-0 z-10">
+      <nav className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex gap-1">
             {tabs.map((tab) => (
@@ -49,8 +72,8 @@ export default function DashboardPage() {
                 onClick={() => setActiveTab(tab.id)}
                 className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
                   activeTab === tab.id
-                    ? 'border-orange-500 text-orange-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-800'
+                    ? 'border-emerald-600 text-emerald-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
                 }`}
               >
                 {tab.icon} {tab.label}
@@ -65,37 +88,34 @@ export default function DashboardPage() {
         {activeTab === 'orders' && (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-800">Live Orders</h2>
-              <span className="text-xs text-gray-400">Auto-refreshes every 15s</span>
+              <h2 className="text-lg font-semibold text-slate-800">Live Orders</h2>
+              <span className="text-xs text-slate-400">Auto-refreshes every 15s</span>
             </div>
-            <KanbanBoard vendorId={VENDOR_ID} />
+            <KanbanBoard vendorId={vendorId} />
           </div>
         )}
 
         {activeTab === 'products' && (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-800">Product Catalogue</h2>
-              <button
-                onClick={() => setActiveTab('add-product')}
-                className="text-sm bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-              >
+              <h2 className="text-lg font-semibold text-slate-800">Product Catalogue</h2>
+              <Button onClick={() => setActiveTab('add-product')} size="sm">
                 ➕ Add Product
-              </button>
+              </Button>
             </div>
-            <ProductManagement vendorId={VENDOR_ID} />
+            <ProductManagement vendorId={vendorId} />
           </div>
         )}
 
         {activeTab === 'add-product' && (
           <div className="max-w-lg mx-auto">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">Add New Product</h2>
-            <div className="bg-white rounded-xl shadow-sm border p-6">
+            <h2 className="text-lg font-semibold text-slate-800 mb-4">Add New Product</h2>
+            <Card padding="lg" className="rounded-xl">
               <AddProductForm
-                vendorId={VENDOR_ID}
+                vendorId={vendorId}
                 onSuccess={() => setActiveTab('products')}
               />
-            </div>
+            </Card>
           </div>
         )}
       </main>

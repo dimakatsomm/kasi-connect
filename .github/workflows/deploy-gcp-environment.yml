@@ -1,4 +1,4 @@
-name: Deploy - GCP Environment (reusable)
+name: Deploy - GCP Environment
 
 on:
   workflow_call:
@@ -7,11 +7,9 @@ on:
         description: Target environment (staging or production)
         required: true
         type: string
-      gke_cluster_name:
-        description: GKE cluster name
-        required: true
-        type: string
     secrets:
+      GKE_CLUSTER_NAME:
+        required: true
       GCP_PROJECT_ID:
         required: true
       GCP_REGION:
@@ -20,28 +18,30 @@ on:
         required: true
       GAR_REPOSITORY:
         required: true
+      TF_STATE_BUCKET_GCP:
+        required: true
+      TF_STATE_PREFIX_GCP:
+        required: false
       DB_HOST:
-        required: true
+        required: false
       DB_PORT:
-        required: true
+        required: false
       DB_NAME:
-        required: true
+        required: false
       DB_USER:
-        required: true
+        required: false
       DB_PASSWORD:
-        required: true
+        required: false
       DATABASE_URL:
-        required: true
+        required: false
       REDIS_HOST:
-        required: true
+        required: false
       REDIS_PORT:
-        required: true
+        required: false
       REDIS_PASSWORD:
         required: false
       KAFKA_BROKERS:
-        required: true
-      NEXT_PUBLIC_API_URL:
-        required: true
+        required: false
       WHATSAPP_PROVIDER:
         required: false
       WHATSAPP_VERIFY_TOKEN:
@@ -57,7 +57,11 @@ on:
       TWILIO_WHATSAPP_FROM:
         required: false
       OBS_BUCKET:
-        required: true
+        required: false
+      JWT_SECRET:
+        required: false
+      SEED_MODE:
+        required: false
 
 permissions:
   contents: read
@@ -71,8 +75,7 @@ jobs:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_REGION: ${{ secrets.GCP_REGION }}
       GAR_REPOSITORY: ${{ secrets.GAR_REPOSITORY }}
-      GKE_CLUSTER_NAME: ${{ inputs.gke_cluster_name }}
-      NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+      GKE_CLUSTER_NAME: ${{ secrets.GKE_CLUSTER_NAME }}
       GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
     steps:
       - name: Checkout repository
@@ -85,7 +88,6 @@ jobs:
           : "${GCP_REGION:?GCP_REGION is required}"
           : "${GAR_REPOSITORY:?GAR_REPOSITORY is required}"
           : "${GKE_CLUSTER_NAME:?GKE_CLUSTER_NAME is required}"
-          : "${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required for frontend build}"
           : "${GCP_SA_KEY_JSON:?GCP_SA_KEY_JSON is required}"
 
           WHATSAPP_PROVIDER_VALUE="${{ secrets.WHATSAPP_PROVIDER }}"
@@ -114,6 +116,78 @@ jobs:
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Read infrastructure outputs from Terraform state
+        id: tf_outputs
+        shell: bash
+        run: |
+          # Install Terraform to read outputs from remote state
+          wget -qO- https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_linux_amd64.zip \
+            | funzip > /usr/local/bin/terraform && chmod +x /usr/local/bin/terraform
+
+          TF_PREFIX="${{ secrets.TF_STATE_PREFIX_GCP }}"
+          if [ -z "${TF_PREFIX}" ]; then TF_PREFIX="kasi-connect"; fi
+          ENV_SUFFIX="${{ inputs.environment }}"
+
+          # Create a minimal TF config that reads remote state
+          TMPDIR=$(mktemp -d)
+          cat > "${TMPDIR}/main.tf" <<EOF
+          data "terraform_remote_state" "infra" {
+            backend = "gcs"
+            config = {
+              bucket = "${{ secrets.TF_STATE_BUCKET_GCP }}"
+              prefix = "${TF_PREFIX}/${ENV_SUFFIX}"
+            }
+          }
+          output "cloud_sql"      { value = data.terraform_remote_state.infra.outputs.cloud_sql }
+          output "db_credentials" {
+            value     = data.terraform_remote_state.infra.outputs.db_credentials
+            sensitive = true
+          }
+          output "redis"          { value = data.terraform_remote_state.infra.outputs.redis }
+          output "asset_bucket"   { value = data.terraform_remote_state.infra.outputs.asset_bucket }
+          output "gke_cluster"    { value = data.terraform_remote_state.infra.outputs.gke_cluster }
+          EOF
+
+          cd "${TMPDIR}"
+          terraform init -input=false -no-color
+          terraform refresh -input=false -no-color
+
+          # Extract values (secrets fallback → TF output)
+          TF_DB_HOST=$(terraform output -json cloud_sql | jq -r '.private_ip')
+          TF_DB_NAME=$(terraform output -json cloud_sql | jq -r '.database')
+          TF_DB_USER=$(terraform output -json db_credentials | jq -r '.user')
+          TF_DB_PASS=$(terraform output -json db_credentials | jq -r '.password')
+          TF_REDIS_HOST=$(terraform output -json redis | jq -r '.host')
+          TF_REDIS_PORT=$(terraform output -json redis | jq -r '.port')
+          TF_ASSET_BUCKET=$(terraform output -raw asset_bucket)
+
+          # Use secret if set, otherwise use Terraform output
+          DB_HOST="${{ secrets.DB_HOST }}";      [ -z "${DB_HOST}" ]      && DB_HOST="${TF_DB_HOST}"
+          DB_PORT="${{ secrets.DB_PORT }}";      [ -z "${DB_PORT}" ]      && DB_PORT="5432"
+          DB_NAME="${{ secrets.DB_NAME }}";      [ -z "${DB_NAME}" ]      && DB_NAME="${TF_DB_NAME}"
+          DB_USER="${{ secrets.DB_USER }}";      [ -z "${DB_USER}" ]      && DB_USER="${TF_DB_USER}"
+          DB_PASSWORD="${{ secrets.DB_PASSWORD }}"; [ -z "${DB_PASSWORD}" ] && DB_PASSWORD="${TF_DB_PASS}"
+          REDIS_HOST="${{ secrets.REDIS_HOST }}";  [ -z "${REDIS_HOST}" ]  && REDIS_HOST="${TF_REDIS_HOST}"
+          REDIS_PORT="${{ secrets.REDIS_PORT }}";  [ -z "${REDIS_PORT}" ]  && REDIS_PORT="${TF_REDIS_PORT}"
+          OBS_BUCKET="${{ secrets.OBS_BUCKET }}";  [ -z "${OBS_BUCKET}" ]  && OBS_BUCKET="${TF_ASSET_BUCKET}"
+
+          # Mask sensitive values
+          echo "::add-mask::${DB_PASSWORD}"
+
+          # Export to GITHUB_OUTPUT for downstream steps
+          {
+            echo "db_host=${DB_HOST}"
+            echo "db_port=${DB_PORT}"
+            echo "db_name=${DB_NAME}"
+            echo "db_user=${DB_USER}"
+            echo "db_password=${DB_PASSWORD}"
+            echo "redis_host=${REDIS_HOST}"
+            echo "redis_port=${REDIS_PORT}"
+            echo "obs_bucket=${OBS_BUCKET}"
+          } >> "$GITHUB_OUTPUT"
+
+          rm -rf "${TMPDIR}"
+
       - name: Configure Docker for GAR
         shell: bash
         run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
@@ -131,19 +205,15 @@ jobs:
           docker push "${IMAGE}"
           echo "BACKEND_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
 
-      - name: Build and push frontend image
-        shell: bash
-        run: |
-          IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GAR_REPOSITORY}/kasi-connect-frontend:${{ steps.image_tag.outputs.tag }}"
-          docker build --build-arg NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL}" -t "${IMAGE}" ./frontend
-          docker push "${IMAGE}"
-          echo "FRONTEND_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
-
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
 
       - name: Set up Helm
         uses: azure/setup-helm@v4
+
+      - name: Install gke-gcloud-auth-plugin
+        shell: bash
+        run: gcloud components install gke-gcloud-auth-plugin --quiet
 
       - name: Configure kubeconfig for GKE
         shell: bash
@@ -162,44 +232,62 @@ jobs:
         shell: bash
         run: |
           helm repo add bitnami https://charts.bitnami.com/bitnami --force-update
+          # Remove stale release whose StatefulSet spec may conflict with new values
+          if helm status kafka --namespace messaging &>/dev/null; then
+            helm uninstall kafka --namespace messaging --wait --timeout 2m || true
+            kubectl wait --for=delete pod -l app.kubernetes.io/name=kafka \
+              --namespace messaging --timeout=60s 2>/dev/null || true
+          fi
           helm upgrade --install kafka bitnami/kafka \
             --namespace messaging --create-namespace \
-            --set replicaCount=1 \
-            --set zookeeper.replicaCount=1 \
-            --set persistence.enabled=false \
-            --set zookeeper.persistence.enabled=false \
-            --wait --timeout 5m
+            --set controller.replicaCount=1 \
+            --set controller.persistence.enabled=false \
+            --set controller.resources.requests.cpu=200m \
+            --set controller.resources.requests.memory=256Mi \
+            --set controller.resources.limits.cpu=1 \
+            --set controller.resources.limits.memory=1Gi \
+            --set controller.heapOpts="-Xmx384m -Xms384m" \
+            --set broker.replicaCount=0 \
+            --set listeners.client.protocol=PLAINTEXT \
+            --timeout 10m
+          # Don't --wait; Kafka may take a while to start and the backend
+          # reconnects automatically. Give it a best-effort check instead.
+          echo "Waiting up to 3 min for Kafka pod to become ready..."
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=kafka \
+            --namespace messaging --timeout=180s || \
+            echo "WARNING: Kafka not ready yet — backend will reconnect automatically"
           # Default to in-cluster broker unless caller already provided a value.
           if [ -z "${{ secrets.KAFKA_BROKERS }}" ]; then
-            echo "KAFKA_BROKERS_EFFECTIVE=kafka-headless.messaging.svc.cluster.local:9092" >> "$GITHUB_ENV"
+            echo "KAFKA_BROKERS_EFFECTIVE=kafka.messaging.svc.cluster.local:9092" >> "$GITHUB_ENV"
           else
             echo "KAFKA_BROKERS_EFFECTIVE=${{ secrets.KAFKA_BROKERS }}" >> "$GITHUB_ENV"
           fi
 
-      - name: Create image pull secret
-        shell: bash
-        run: |
-          ACCESS_TOKEN="$(gcloud auth print-access-token)"
-          kubectl create secret docker-registry swr-secret \
-            --docker-server="${GCP_REGION}-docker.pkg.dev" \
-            --docker-username="oauth2accesstoken" \
-            --docker-password="${ACCESS_TOKEN}" \
-            --namespace=kasi-connect \
-            --dry-run=client -o yaml | kubectl apply -f -
-
       - name: Create backend secrets
         shell: bash
         run: |
+          # Build DATABASE_URL from individual DB values if not explicitly provided
+          DATABASE_URL="${{ secrets.DATABASE_URL }}"
+          if [ -z "${DATABASE_URL}" ]; then
+            # URL-encode user and password — the Terraform-generated password
+            # may contain @, #, %, etc. which break the connection-URL format.
+            ENCODED_USER=$(printf '%s' "${{ steps.tf_outputs.outputs.db_user }}" \
+              | python3 -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(),safe=''))")
+            ENCODED_PASS=$(printf '%s' "${{ steps.tf_outputs.outputs.db_password }}" \
+              | python3 -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read(),safe=''))")
+            DATABASE_URL="postgresql://${ENCODED_USER}:${ENCODED_PASS}@${{ steps.tf_outputs.outputs.db_host }}:${{ steps.tf_outputs.outputs.db_port }}/${{ steps.tf_outputs.outputs.db_name }}"
+          fi
+          echo "DATABASE_URL structure: postgresql://<user>:<pass>@${{ steps.tf_outputs.outputs.db_host }}:${{ steps.tf_outputs.outputs.db_port }}/${{ steps.tf_outputs.outputs.db_name }}"
           kubectl create secret generic backend-secrets \
             --namespace=kasi-connect \
-            --from-literal=DB_HOST="${{ secrets.DB_HOST }}" \
-            --from-literal=DB_PORT="${{ secrets.DB_PORT }}" \
-            --from-literal=DB_NAME="${{ secrets.DB_NAME }}" \
-            --from-literal=DB_USER="${{ secrets.DB_USER }}" \
-            --from-literal=DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
-            --from-literal=DATABASE_URL="${{ secrets.DATABASE_URL }}" \
-            --from-literal=REDIS_HOST="${{ secrets.REDIS_HOST }}" \
-            --from-literal=REDIS_PORT="${{ secrets.REDIS_PORT }}" \
+            --from-literal=DB_HOST="${{ steps.tf_outputs.outputs.db_host }}" \
+            --from-literal=DB_PORT="${{ steps.tf_outputs.outputs.db_port }}" \
+            --from-literal=DB_NAME="${{ steps.tf_outputs.outputs.db_name }}" \
+            --from-literal=DB_USER="${{ steps.tf_outputs.outputs.db_user }}" \
+            --from-literal=DB_PASSWORD="${{ steps.tf_outputs.outputs.db_password }}" \
+            --from-literal=DATABASE_URL="${DATABASE_URL}" \
+            --from-literal=REDIS_HOST="${{ steps.tf_outputs.outputs.redis_host }}" \
+            --from-literal=REDIS_PORT="${{ steps.tf_outputs.outputs.redis_port }}" \
             --from-literal=REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}" \
             --from-literal=KAFKA_BROKERS="${KAFKA_BROKERS_EFFECTIVE}" \
             --from-literal=WHATSAPP_PROVIDER="${WHATSAPP_PROVIDER:-meta}" \
@@ -210,26 +298,67 @@ jobs:
             --from-literal=TWILIO_AUTH_TOKEN="${{ secrets.TWILIO_AUTH_TOKEN }}" \
             --from-literal=TWILIO_WHATSAPP_FROM="${{ secrets.TWILIO_WHATSAPP_FROM }}" \
             --from-literal=OBS_ENDPOINT="" \
-            --from-literal=OBS_BUCKET="${{ secrets.OBS_BUCKET }}" \
+            --from-literal=OBS_BUCKET="${{ steps.tf_outputs.outputs.obs_bucket }}" \
             --from-literal=OBS_ACCESS_KEY="" \
             --from-literal=OBS_SECRET_KEY="" \
+            --from-literal=JWT_SECRET="${{ secrets.JWT_SECRET }}" \
             --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy backend
+        shell: bash
+        run: |
+          SEED_MODE="${{ secrets.SEED_MODE }}"
+          if [ -z "${SEED_MODE}" ]; then SEED_MODE="app"; fi
+          sed -e "s|BACKEND_IMAGE|${BACKEND_IMAGE}|g" \
+              -e "s|value: app|value: ${SEED_MODE}|g" \
+              k8s/backend/deployment.yaml | \
+            kubectl apply -f -
+          kubectl apply -f k8s/backend/service.yaml
+          if ! kubectl rollout status deployment/backend --namespace=kasi-connect --timeout=8m; then
+            echo "--- Backend rollout failed. Dumping pod info for debugging ---"
+            kubectl get pods -n kasi-connect -l app=backend -o wide
+            kubectl describe pods -n kasi-connect -l app=backend
+            kubectl logs -n kasi-connect -l app=backend --tail=80 || true
+            exit 1
+          fi
+
+      - name: Discover backend external URL
+        id: backend_url
+        shell: bash
+        run: |
+          echo "Waiting for backend LoadBalancer IP..."
+          for i in $(seq 1 30); do
+            EXTERNAL_IP=$(kubectl get svc backend --namespace=kasi-connect \
+              -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            if [ -n "${EXTERNAL_IP}" ]; then
+              break
+            fi
+            echo "  attempt ${i}/30 — not ready yet"
+            sleep 10
+          done
+          if [ -z "${EXTERNAL_IP}" ]; then
+            echo "ERROR: backend LoadBalancer IP not assigned after 5 minutes"
+            exit 1
+          fi
+          API_URL="http://${EXTERNAL_IP}:3000"
+          echo "Backend API URL: ${API_URL}"
+          echo "api_url=${API_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push frontend image
+        shell: bash
+        run: |
+          IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GAR_REPOSITORY}/kasi-connect-frontend:${{ steps.image_tag.outputs.tag }}"
+          docker build --build-arg NEXT_PUBLIC_API_URL="${{ steps.backend_url.outputs.api_url }}" -t "${IMAGE}" ./frontend
+          docker push "${IMAGE}"
+          echo "FRONTEND_IMAGE=${IMAGE}" >> "$GITHUB_ENV"
 
       - name: Create frontend secrets
         shell: bash
         run: |
           kubectl create secret generic frontend-secrets \
             --namespace=kasi-connect \
-            --from-literal=NEXT_PUBLIC_API_URL="${{ secrets.NEXT_PUBLIC_API_URL }}" \
+            --from-literal=NEXT_PUBLIC_API_URL="${{ steps.backend_url.outputs.api_url }}" \
             --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Deploy backend
-        shell: bash
-        run: |
-          sed "s|BACKEND_IMAGE|${BACKEND_IMAGE}|g" k8s/backend/deployment.yaml | \
-            kubectl apply -f -
-          kubectl apply -f k8s/backend/service.yaml
-          kubectl rollout status deployment/backend --namespace=kasi-connect --timeout=5m
 
       - name: Deploy frontend
         shell: bash
@@ -238,3 +367,23 @@ jobs:
             kubectl apply -f -
           kubectl apply -f k8s/frontend/service.yaml
           kubectl rollout status deployment/frontend --namespace=kasi-connect --timeout=5m
+
+      - name: Deployment summary
+        if: always()
+        shell: bash
+        run: |
+          BACKEND_IP=$(kubectl get svc backend --namespace=kasi-connect \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo 'pending')
+          FRONTEND_IP=$(kubectl get svc frontend --namespace=kasi-connect \
+            -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo 'pending')
+          echo "══════════════════════════════════════════════════"
+          echo "  KasiConnect ${{ inputs.environment }} — Deployment Summary"
+          echo "══════════════════════════════════════════════════"
+          echo ""
+          echo "  Backend API:  http://${BACKEND_IP}:3000"
+          echo "  Dashboard:    http://${FRONTEND_IP}:4000"
+          echo "  Webhook URL:  http://${BACKEND_IP}:3000/webhook"
+          echo ""
+          echo "  Set the Webhook URL in Twilio Console or Meta Developer Console."
+          echo "  Demo login:  demo@kasiconnect.co.za / demo1234"
+          echo "══════════════════════════════════════════════════"

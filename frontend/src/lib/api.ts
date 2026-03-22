@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Order, OrderStatus, Product, Vendor } from '@/types';
+import type { Order, OrderStatus, Product, Vendor, Category, AuthResponse } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -37,7 +37,7 @@ export async function fetchProducts(vendorId: string): Promise<Product[]> {
 
 export async function createProduct(formData: FormData): Promise<Product> {
   const { data } = await apiClient.post('/api/products', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: { 'Content-Type': undefined },
   });
   return data.product;
 }
@@ -69,4 +69,53 @@ export async function fetchVendors(): Promise<Vendor[]> {
 export async function fetchVendor(vendorId: string): Promise<Vendor> {
   const { data } = await apiClient.get(`/api/vendors/${vendorId}`);
   return data.vendor;
+}
+
+// ── Categories ────────────────────────────────────────────────────────────────
+
+export async function fetchCategories(): Promise<Category[]> {
+  const { data } = await apiClient.get('/api/categories');
+  return data.categories;
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export async function login(
+  credential: string,
+  password: string,
+  method: 'email' | 'phone' = 'email'
+): Promise<AuthResponse> {
+  const body = method === 'phone'
+    ? { phone: credential, password }
+    : { email: credential, password };
+  const { data } = await apiClient.post('/api/auth/login', body);
+  return data;
+}
+
+export async function register(
+  email: string,
+  password: string,
+  vendorId: string,
+  name?: string
+): Promise<AuthResponse> {
+  const { data } = await apiClient.post('/api/auth/register', {
+    email,
+    password,
+    vendorId,
+    name,
+  });
+  return data;
+}
+
+export async function fetchMe(): Promise<AuthResponse['user']> {
+  const { data } = await apiClient.get('/api/auth/me');
+  return data.user;
+}
+
+export function setAuthToken(token: string | null): void {
+  if (token) {
+    apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+  } else {
+    delete apiClient.defaults.headers.common['Authorization'];
+  }
 }

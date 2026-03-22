@@ -119,6 +119,30 @@ jobs:
         shell: bash
         run: terraform apply -auto-approve -input=false -no-color tfplan
 
+  deploy-staging:
+    needs: [staging]
+    uses: ./.github/workflows/deploy-gcp-environment.yml
+    with:
+      environment: staging
+    secrets:
+      GKE_CLUSTER_NAME: ${{ secrets.GKE_CLUSTER_NAME }}
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ secrets.GCP_REGION }}
+      GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
+      GAR_REPOSITORY: ${{ secrets.GAR_REPOSITORY }}
+      TF_STATE_BUCKET_GCP: ${{ secrets.TF_STATE_BUCKET_GCP }}
+      TF_STATE_PREFIX_GCP: ${{ secrets.TF_STATE_PREFIX_GCP }}
+      KAFKA_BROKERS: ${{ secrets.KAFKA_BROKERS }}
+      WHATSAPP_PROVIDER: ${{ secrets.WHATSAPP_PROVIDER }}
+      WHATSAPP_VERIFY_TOKEN: ${{ secrets.WHATSAPP_VERIFY_TOKEN }}
+      WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+      WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+      TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+      TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+      TWILIO_WHATSAPP_FROM: ${{ secrets.TWILIO_WHATSAPP_FROM }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      SEED_MODE: ${{ secrets.SEED_MODE }}
+
   production:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
     runs-on: ubuntu-latest
@@ -204,13 +228,30 @@ jobs:
         shell: bash
         run: terraform plan -input=false -no-color -out=tfplan
 
-      - name: Upload plan artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-gcp-plan-production
-          path: terraform-gcp/tfplan
-          retention-days: 7
-
       - name: Terraform apply
         shell: bash
         run: terraform apply -auto-approve -input=false -no-color tfplan
+
+  deploy-production:
+    needs: [production]
+    uses: ./.github/workflows/deploy-gcp-environment.yml
+    with:
+      environment: production
+    secrets:
+      GKE_CLUSTER_NAME: ${{ secrets.GKE_CLUSTER_NAME }}
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ secrets.GCP_REGION }}
+      GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
+      GAR_REPOSITORY: ${{ secrets.GAR_REPOSITORY }}
+      TF_STATE_BUCKET_GCP: ${{ secrets.TF_STATE_BUCKET_GCP }}
+      TF_STATE_PREFIX_GCP: ${{ secrets.TF_STATE_PREFIX_GCP }}
+      KAFKA_BROKERS: ${{ secrets.KAFKA_BROKERS }}
+      WHATSAPP_PROVIDER: ${{ secrets.WHATSAPP_PROVIDER }}
+      WHATSAPP_VERIFY_TOKEN: ${{ secrets.WHATSAPP_VERIFY_TOKEN }}
+      WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+      WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+      TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+      TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+      TWILIO_WHATSAPP_FROM: ${{ secrets.TWILIO_WHATSAPP_FROM }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      SEED_MODE: ${{ secrets.SEED_MODE }}

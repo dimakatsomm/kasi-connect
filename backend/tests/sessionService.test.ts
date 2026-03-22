@@ -37,7 +37,7 @@ describe('Session Service', () => {
     test('creates a session with initial state', async () => {
       const session = await sessionService.createSession('+27821000001');
       expect(session.phone).toBe('+27821000001');
-      expect(session.state).toBe(SESSION_STATES.AWAITING_VENDOR_TYPE);
+      expect(session.state).toBe(SESSION_STATES.AWAITING_SECTOR);
       expect(session.items).toEqual([]);
     });
 
@@ -59,7 +59,7 @@ describe('Session Service', () => {
     test('getOrCreateSession creates if not found', async () => {
       const session = await sessionService.getOrCreateSession('+27821000003');
       expect(session).not.toBeNull();
-      expect(session.state).toBe(SESSION_STATES.AWAITING_VENDOR_TYPE);
+      expect(session.state).toBe(SESSION_STATES.AWAITING_SECTOR);
     });
 
     test('getOrCreateSession returns existing session', async () => {
@@ -76,7 +76,7 @@ describe('Session Service', () => {
         vendorId: 'v1',
       });
       expect(updated.vendorId).toBe('v1');
-      expect(updated.state).toBe(SESSION_STATES.AWAITING_VENDOR_TYPE);
+      expect(updated.state).toBe(SESSION_STATES.AWAITING_SECTOR);
     });
 
     test('throws if session does not exist', async () => {
@@ -91,9 +91,9 @@ describe('Session Service', () => {
       await sessionService.createSession('+27821000006');
       const session = await sessionService.transitionSession(
         '+27821000006',
-        SESSION_STATES.AWAITING_ITEMS
+        SESSION_STATES.AWAITING_LOCATION
       );
-      expect(session.state).toBe(SESSION_STATES.AWAITING_ITEMS);
+      expect(session.state).toBe(SESSION_STATES.AWAITING_LOCATION);
     });
 
     test('throws on invalid transition', async () => {
@@ -110,7 +110,7 @@ describe('Session Service', () => {
       await sessionService.createSession('+27821000008');
       const session = await sessionService.transitionSession(
         '+27821000008',
-        SESSION_STATES.AWAITING_ITEMS,
+        SESSION_STATES.AWAITING_LOCATION,
         { vendorId: 'v2' }
       );
       expect(session.vendorId).toBe('v2');
@@ -120,10 +120,9 @@ describe('Session Service', () => {
   describe('resetSession', () => {
     test('resets state and items', async () => {
       await sessionService.createSession('+27821000009');
-      await sessionService.transitionSession(
-        '+27821000009',
-        SESSION_STATES.AWAITING_ITEMS
-      );
+      await sessionService.updateSession('+27821000009', {
+        state: SESSION_STATES.AWAITING_ITEMS,
+      });
       await sessionService.updateSession('+27821000009', {
         items: [
           {
@@ -131,6 +130,7 @@ describe('Session Service', () => {
             product: {
               id: 'p1',
               vendor_id: 'v1',
+              sub_category_id: null,
               name: 'Bread',
               description: null,
               price: new Decimal('15.00'),
@@ -150,7 +150,7 @@ describe('Session Service', () => {
       });
 
       const reset = await sessionService.resetSession('+27821000009');
-      expect(reset.state).toBe(SESSION_STATES.AWAITING_VENDOR_TYPE);
+      expect(reset.state).toBe(SESSION_STATES.AWAITING_SECTOR);
       expect(reset.items).toEqual([]);
     });
   });
@@ -166,9 +166,9 @@ describe('Session Service', () => {
 });
 
 describe('Session States — VALID_TRANSITIONS', () => {
-  test('AWAITING_VENDOR_TYPE can only go to AWAITING_ITEMS', () => {
-    const allowed = VALID_TRANSITIONS[SESSION_STATES.AWAITING_VENDOR_TYPE];
-    expect(allowed).toContain(SESSION_STATES.AWAITING_ITEMS);
+  test('AWAITING_SECTOR can only go to AWAITING_LOCATION', () => {
+    const allowed = VALID_TRANSITIONS[SESSION_STATES.AWAITING_SECTOR];
+    expect(allowed).toContain(SESSION_STATES.AWAITING_LOCATION);
     expect(allowed).toHaveLength(1);
   });
 
@@ -180,6 +180,6 @@ describe('Session States — VALID_TRANSITIONS', () => {
 
   test('ORDER_PLACED can restart the flow', () => {
     const allowed = VALID_TRANSITIONS[SESSION_STATES.ORDER_PLACED];
-    expect(allowed).toContain(SESSION_STATES.AWAITING_VENDOR_TYPE);
+    expect(allowed).toContain(SESSION_STATES.AWAITING_SECTOR);
   });
 });

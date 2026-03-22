@@ -55,10 +55,17 @@ export interface AppConfig {
   session: {
     inactivityTimeoutMs: number;
   };
+  vendor: {
+    searchRadiusKm: number;
+  };
   twilio: {
     accountSid: string | undefined;
     authToken: string | undefined;
     fromNumber: string | undefined;
+  };
+  jwt: {
+    secret: string;
+    expiresIn: string;
   };
 }
 
@@ -130,10 +137,19 @@ const config: AppConfig = {
       parseInt(process.env.SESSION_INACTIVITY_TIMEOUT_MS ?? '1800000', 10),
   },
 
+  vendor: {
+    searchRadiusKm: parseFloat(process.env.VENDOR_SEARCH_RADIUS_KM ?? '2'),
+  },
+
   twilio: {
     accountSid: process.env.TWILIO_ACCOUNT_SID,
     authToken: process.env.TWILIO_AUTH_TOKEN,
     fromNumber: process.env.TWILIO_WHATSAPP_FROM,
+  },
+
+  jwt: {
+    secret: process.env.JWT_SECRET ?? 'dev-secret-change-in-production',
+    expiresIn: process.env.JWT_EXPIRES_IN ?? '7d',
   },
 };
 

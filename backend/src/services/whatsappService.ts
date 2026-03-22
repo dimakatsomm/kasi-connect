@@ -55,26 +55,50 @@ async function callTwilio(MessagesParams: URLSearchParams): Promise<WhatsAppMess
     throw new Error('Twilio API base URL is not defined.');
   }
 
-  const response = await axios.post<TwilioMessageResponse>(
-    `${TWILIO_API_BASE}/Messages.json`,
-    MessagesParams.toString(),
-    {
-      auth: {
-        username: config.twilio.accountSid as string,
-        password: config.twilio.authToken as string,
-      },
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-    }
-  );
+  const to = MessagesParams.get('To');
+  const from = MessagesParams.get('From');
 
-  logger.debug('Twilio WhatsApp message sent', {
-    to: MessagesParams.get('To'),
-    sid: response.data.sid,
+  logger.info('Twilio API request context', {
+    accountSid: config.twilio.accountSid,
+    accountSidLength: config.twilio.accountSid?.length,
+    apiBase: TWILIO_API_BASE,
+    to,
+    from,
   });
 
-  return { messages: [{ id: response.data.sid }] };
+  try {
+    const response = await axios.post<TwilioMessageResponse>(
+      `${TWILIO_API_BASE}/Messages.json`,
+      MessagesParams.toString(),
+      {
+        auth: {
+          username: config.twilio.accountSid as string,
+          password: config.twilio.authToken as string,
+        },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      }
+    );
+
+    logger.debug('Twilio WhatsApp message sent', {
+      to,
+      sid: response.data.sid,
+    });
+
+    return { messages: [{ id: response.data.sid }] };
+  } catch (err) {
+    const errData = axios.isAxiosError(err)
+      ? err.response?.data
+      : (err instanceof Error ? err.message : String(err));
+    logger.error('Failed to send Twilio WhatsApp message', {
+      to,
+      from,
+      status: axios.isAxiosError(err) ? err.response?.status : undefined,
+      error: errData,
+    });
+    throw err;
+  }
 }
 
 /**
@@ -251,6 +275,60 @@ export async function sendListMessage(
       axios.isAxiosError(err) ? (err.response?.data as unknown) : (err instanceof Error ? err.message : String(err));
     logger.error('Failed to send WhatsApp list message', { to, error: errData });
     throw err;
+  }
+}
+
+/**
+ * Send a location request message, prompting the user to share their live location.
+ * Uses Meta's interactive location_request_message type.
+ * Falls back to a text prompt for Twilio.
+ *
+ * @param to       Recipient phone
+ * @param bodyText Explanatory text shown above the "Send location" button
+ */
+export async function sendLocationRequest(
+  to: string,
+  bodyText: string
+): Promise<WhatsAppMessageResponse> {
+  if (USES_TWILIO) {
+    return sendTextMessage(
+      to,
+      `${bodyText}\n\nPlease share your 📍 location pin or type your area name.`
+    );
+  }
+
+  const url = `${config.whatsapp.apiBaseUrl}/${config.whatsapp.phoneNumberId}/messages`;
+
+  const payload = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'interactive',
+    interactive: {
+      type: 'location_request_message',
+      body: { text: bodyText },
+      action: { name: 'send_location' },
+    },
+  };
+
+  try {
+    const response = await axios.post<WhatsAppMessageResponse>(url, payload, {
+      headers: {
+        Authorization: `Bearer ${config.whatsapp.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    logger.debug('WhatsApp location request sent', { to });
+    return response.data;
+  } catch (err) {
+    const errData =
+      axios.isAxiosError(err) ? (err.response?.data as unknown) : (err instanceof Error ? err.message : String(err));
+    logger.error('Failed to send WhatsApp location request', { to, error: errData });
+    // Fall back to a plain text prompt so the flow isn't blocked
+    return sendTextMessage(
+      to,
+      `${bodyText}\n\nDrop a 📌 location pin or type your area name.`
+    );
   }
 }
 

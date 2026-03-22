@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import axios from 'axios';
 import config from '../config';
 import logger from '../config/logger';
 import { handleMessage } from '../services/messageHandler';
@@ -105,8 +106,11 @@ async function processTwilioWebhook(body: TwilioWebhookBody): Promise<void> {
 
     await handleMessage(message, message.from);
   } catch (err) {
+    const responseData = axios.isAxiosError(err) ? err.response?.data : undefined;
     logger.error('Error processing Twilio webhook payload', {
       error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+      responseData,
     });
   }
 }

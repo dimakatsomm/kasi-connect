@@ -1,5 +1,8 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import crypto from 'crypto';
 import { body, param, validationResult } from 'express-validator';
 import { Prisma } from '@prisma/client';
 import prisma from '../db';
@@ -7,9 +10,19 @@ import { publishEvent } from '../kafka/producer';
 import config from '../config';
 import logger from '../config/logger';
 
+const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads');
+try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch { /* directory may be pre-created in Docker */ }
+
 const router = Router();
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+    filename: (_req, file, cb) => {
+      const unique = crypto.randomBytes(8).toString('hex');
+      const ext = path.extname(file.originalname);
+      cb(null, `${unique}${ext}`);
+    },
+  }),
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
@@ -68,6 +81,7 @@ router.post(
       stockLevel,
       lowStockThreshold,
       aliases,
+      subCategoryId,
     } = req.body as {
       vendorId: string;
       name: string;
@@ -76,11 +90,12 @@ router.post(
       stockLevel?: string | number;
       lowStockThreshold?: string | number;
       aliases?: string | string[];
+      subCategoryId?: string;
     };
 
     let imageUrl: string | null = null;
     if (req.file) {
-      imageUrl = `/uploads/${req.file.originalname}`;
+      imageUrl = `/uploads/${req.file.filename}`;
     }
 
     const aliasesArray: string[] = aliases
@@ -99,9 +114,16 @@ router.post(
     const lowStockThresholdInt = parseInt(String(lowStockThreshold ?? 5), 10);
 
     try {
+      const vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });
+      if (!vendor) {
+        res.status(404).json({ error: 'Vendor not found' });
+        return;
+      }
+
       const product = await prisma.product.create({
         data: {
           vendor_id: vendorId,
+          sub_category_id: subCategoryId || null,
           name,
           description,
           price: priceNum,
@@ -192,6 +214,14 @@ router.patch(
       return null;
     };
 
+    // Handle sub_category_id separately (UUID or null)
+    const subCatVal = readField('sub_category_id') as string | undefined;
+    if (subCatVal !== undefined) {
+      data.sub_category = subCatVal
+        ? { connect: { id: subCatVal } }
+        : { disconnect: true };
+    }
+
     const fieldErrors: string[] = [
       maybeAssign('name'),
       maybeAssign('description'),
@@ -210,7 +240,7 @@ router.patch(
     }
 
     if (req.file) {
-      data.image_url = `/uploads/${req.file.originalname}`;
+      data.image_url = `/uploads/${req.file.filename}`;
     }
 
     if (Object.keys(data).length === 0) {

@@ -17,9 +17,30 @@ export interface Vendor {
   updated_at: string;
 }
 
+export interface Category {
+  id: string;
+  name: string;
+  description?: string;
+  keywords: string[];
+  sub_categories: SubCategory[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubCategory {
+  id: string;
+  category_id: string;
+  name: string;
+  description?: string;
+  keywords: string[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Product {
   id: string;
   vendor_id: string;
+  sub_category_id?: string;
   name: string;
   description?: string;
   price: number;
@@ -30,6 +51,7 @@ export interface Product {
   is_special: boolean;
   special_price?: number;
   aliases: string[];
+  sub_category?: SubCategory & { category?: Category };
   created_at: string;
   updated_at: string;
 }
@@ -74,9 +96,9 @@ export interface DailySpecial {
 
 // Kanban column definitions
 export const KANBAN_COLUMNS: { status: OrderStatus; label: string; colour: string }[] = [
-  { status: 'confirmed', label: 'New', colour: 'bg-blue-100 border-blue-300' },
-  { status: 'preparing', label: 'Preparing', colour: 'bg-yellow-100 border-yellow-300' },
-  { status: 'ready', label: 'Ready', colour: 'bg-green-100 border-green-300' },
+  { status: 'confirmed', label: 'New', colour: 'bg-sky-50 border-sky-300' },
+  { status: 'preparing', label: 'Preparing', colour: 'bg-amber-50 border-amber-300' },
+  { status: 'ready', label: 'Ready', colour: 'bg-emerald-50 border-emerald-400' },
 ];
 
 // Status transitions for the vendor dashboard buttons
@@ -97,3 +119,20 @@ export const STATUS_ACTION_LABELS: Record<OrderStatus, string> = {
   delivered: '',
   cancelled: '',
 };
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export interface AuthUser {
+  id: string;
+  email?: string | null;
+  phone?: string | null;
+  name?: string;
+  role: string;
+  vendorId: string;
+  vendorName: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: AuthUser;
+}

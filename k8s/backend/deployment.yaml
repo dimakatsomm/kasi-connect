@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/name: backend
     app.kubernetes.io/part-of: kasi-connect
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: backend
@@ -37,20 +37,22 @@ spec:
               value: production
             - name: PORT
               value: "3000"
+            - name: SEED_MODE
+              value: app
           livenessProbe:
             httpGet:
               path: /health
               port: 3000
-            initialDelaySeconds: 15
+            initialDelaySeconds: 30
             periodSeconds: 20
-            failureThreshold: 3
+            failureThreshold: 5
           readinessProbe:
             httpGet:
               path: /health
               port: 3000
-            initialDelaySeconds: 10
+            initialDelaySeconds: 20
             periodSeconds: 10
-            failureThreshold: 3
+            failureThreshold: 6
           resources:
             requests:
               cpu: 250m
@@ -58,5 +60,3 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
-      imagePullSecrets:
-        - name: swr-secret

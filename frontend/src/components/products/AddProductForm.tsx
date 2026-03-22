@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { createProduct } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
+import { useCategories } from '@/hooks/useApi';
+import { Button, Input } from '@/components/ui';
 
 interface AddProductFormProps {
   vendorId: string;
@@ -11,8 +13,19 @@ interface AddProductFormProps {
 
 export function AddProductForm({ vendorId, onSuccess }: AddProductFormProps) {
   const queryClient = useQueryClient();
+  const { data: categories = [] } = useCategories();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState('');
+  const [selectedSubCategoryId, setSelectedSubCategoryId] = useState('');
+
+  const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
+  const subCategories = selectedCategory?.sub_categories ?? [];
+
+  const handleCategoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSelectedCategoryId(e.target.value);
+    setSelectedSubCategoryId('');
+  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -22,11 +35,16 @@ export function AddProductForm({ vendorId, onSuccess }: AddProductFormProps) {
     const form = e.currentTarget;
     const formData = new FormData(form);
     formData.set('vendorId', vendorId);
+    if (selectedSubCategoryId) {
+      formData.set('subCategoryId', selectedSubCategoryId);
+    }
 
     try {
       await createProduct(formData);
       queryClient.invalidateQueries({ queryKey: ['products', vendorId] });
       form.reset();
+      setSelectedCategoryId('');
+      setSelectedSubCategoryId('');
       onSuccess?.();
     } catch {
       setError('Failed to create product. Please check the form and try again.');
@@ -37,72 +55,89 @@ export function AddProductForm({ vendorId, onSuccess }: AddProductFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Product Name *</label>
-        <input
-          name="name"
-          required
-          placeholder="e.g. White Bread 700g"
-          className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-        />
-      </div>
+      <Input
+        name="name"
+        required
+        label="Product Name *"
+        placeholder="e.g. White Bread 700g"
+      />
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-        <input
-          name="description"
-          placeholder="Optional description"
-          className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-        />
-      </div>
+      <Input
+        name="description"
+        label="Description"
+        placeholder="Optional description"
+      />
 
       <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Price (R) *</label>
-          <input
-            name="price"
-            type="number"
-            step="0.01"
-            min="0"
-            required
-            placeholder="0.00"
-            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Stock Level</label>
-          <input
-            name="stockLevel"
-            type="number"
-            min="0"
-            defaultValue="0"
-            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-          />
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Aliases (comma-separated)
-        </label>
-        <input
-          name="aliases"
-          placeholder="e.g. bread, loaf, mkate, sinkwa"
-          className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+        <Input
+          name="price"
+          type="number"
+          step="0.01"
+          min="0"
+          required
+          label="Price (R) *"
+          placeholder="0.00"
         />
-        <p className="text-xs text-gray-400 mt-1">
-          Alternative names customers might use in WhatsApp messages
-        </p>
+
+        <Input
+          name="stockLevel"
+          type="number"
+          min="0"
+          defaultValue="0"
+          label="Stock Level"
+        />
       </div>
 
+      {/* Category & Sub-category */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
+          <select
+            value={selectedCategoryId}
+            onChange={handleCategoryChange}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+          >
+            <option value="">No category</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Sub-category</label>
+          <select
+            value={selectedSubCategoryId}
+            onChange={(e) => setSelectedSubCategoryId(e.target.value)}
+            disabled={!selectedCategoryId}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 disabled:bg-slate-50 disabled:text-slate-400"
+          >
+            <option value="">Select sub-category</option>
+            {subCategories.map((sub) => (
+              <option key={sub.id} value={sub.id}>
+                {sub.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <Input
+        name="aliases"
+        label="Aliases (comma-separated)"
+        placeholder="e.g. bread, loaf, mkate, sinkwa"
+        hint="Alternative names customers might use in WhatsApp messages"
+      />
+
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Product Image</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Product Image</label>
         <input
           name="image"
           type="file"
           accept="image/*"
-          className="w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-orange-100 file:text-orange-700 file:font-medium hover:file:bg-orange-200"
+          className="w-full text-sm text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-emerald-100 file:text-emerald-700 file:font-medium hover:file:bg-emerald-200"
         />
       </div>
 
@@ -112,13 +147,9 @@ export function AddProductForm({ vendorId, onSuccess }: AddProductFormProps) {
         </div>
       )}
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg transition-colors"
-      >
+      <Button type="submit" disabled={loading} size="md" fullWidth>
         {loading ? 'Adding...' : 'Add Product'}
-      </button>
+      </Button>
     </form>
   );
 }

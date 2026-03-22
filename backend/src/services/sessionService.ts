@@ -2,9 +2,10 @@ import Redis from 'ioredis';
 import config from '../config';
 import logger from '../config/logger';
 import { SESSION_STATES, VALID_TRANSITIONS, SessionState } from './sessionStates';
-import type { Session } from '../types';
+import type { Session, VendorSession } from '../types';
 
 const SESSION_PREFIX = 'kc:session:';
+const VENDOR_PREFIX = 'kc:vendor:';
 
 let redisClient: Redis | undefined;
 
@@ -49,7 +50,12 @@ export async function createSession(
   const session: Session = {
     phone,
     vendorId,
-    state: SESSION_STATES.AWAITING_VENDOR_TYPE,
+    state: SESSION_STATES.AWAITING_SECTOR,
+    sector: null,
+    customerLatitude: null,
+    customerLongitude: null,
+    nearbyVendors: null,
+    pendingOrderId: null,
     items: [],
     pendingClarification: null,
     fulfilmentType: null,
@@ -171,8 +177,13 @@ export async function resetSession(phone: string): Promise<Session> {
 
   const reset: Session = {
     ...session,
-    state: SESSION_STATES.AWAITING_VENDOR_TYPE,
+    state: SESSION_STATES.AWAITING_SECTOR,
     vendorId: null,
+    sector: null,
+    customerLatitude: null,
+    customerLongitude: null,
+    nearbyVendors: null,
+    pendingOrderId: null,
     items: [],
     pendingClarification: null,
     fulfilmentType: null,
@@ -190,6 +201,68 @@ export async function resetSession(phone: string): Promise<Session> {
 
   logger.debug('Session reset', { phone });
   return reset;
+}
+
+// ── Vendor session helpers ────────────────────────────────────────────────────
+
+const VENDOR_TTL = 3600; // 1 hour
+
+function vendorKey(phone: string): string {
+  return `${VENDOR_PREFIX}${phone}`;
+}
+
+/**
+ * Retrieve a vendor's chat session. Returns null if not found / expired.
+ */
+export async function getVendorSession(
+  phone: string
+): Promise<VendorSession | null> {
+  const client = getRedisClient();
+  const raw = await client.get(vendorKey(phone));
+  if (!raw) return null;
+  return JSON.parse(raw) as VendorSession;
+}
+
+/**
+ * Create or update a vendor's chat session.
+ */
+export async function updateVendorSession(
+  phone: string,
+  updates: Partial<VendorSession> & { vendorId: string }
+): Promise<VendorSession> {
+  const existing = await getVendorSession(phone);
+
+  const session: VendorSession = {
+    vendorId: updates.vendorId,
+    activeCustomerPhone: updates.activeCustomerPhone ?? existing?.activeCustomerPhone ?? null,
+    activeOrderId: updates.activeOrderId ?? existing?.activeOrderId ?? null,
+    updatedAt: Date.now(),
+  };
+
+  const client = getRedisClient();
+  await client.set(vendorKey(phone), JSON.stringify(session), 'EX', VENDOR_TTL);
+
+  logger.debug('Vendor session updated', { phone, session });
+  return session;
+}
+
+/**
+ * End the active vendor↔customer chat (clear the active customer pointer).
+ */
+export async function clearVendorChat(phone: string): Promise<void> {
+  const existing = await getVendorSession(phone);
+  if (!existing) return;
+
+  const updated: VendorSession = {
+    ...existing,
+    activeCustomerPhone: null,
+    activeOrderId: null,
+    updatedAt: Date.now(),
+  };
+
+  const client = getRedisClient();
+  await client.set(vendorKey(phone), JSON.stringify(updated), 'EX', VENDOR_TTL);
+  logger.debug('Vendor chat cleared', { phone });
 }
 
 export { SESSION_STATES, VALID_TRANSITIONS };

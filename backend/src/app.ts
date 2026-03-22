@@ -5,6 +5,7 @@ import express, {
   NextFunction,
   ErrorRequestHandler,
 } from 'express';
+import path from 'path';
 import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
@@ -15,6 +16,8 @@ import webhookRouter from './routes/webhook';
 import ordersRouter from './routes/orders';
 import productsRouter from './routes/products';
 import vendorsRouter from './routes/vendors';
+import categoriesRouter from './routes/categories';
+import authRouter from './routes/auth';
 
 const app: Application = express();
 
@@ -42,6 +45,9 @@ app.use(limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// ── Static files (uploaded product images) ────────────────────────────────────
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req: Request, res: Response): void => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -52,6 +58,8 @@ app.use('/webhook', webhookRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/products', productsRouter);
 app.use('/api/vendors', vendorsRouter);
+app.use('/api/categories', categoriesRouter);
+app.use('/api/auth', authRouter);
 
 // ── 404 handler ───────────────────────────────────────────────────────────────
 app.use((_req: Request, res: Response): void => {

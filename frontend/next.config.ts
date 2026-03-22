@@ -18,20 +18,17 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000",
   },
-  // Allow images from external sources (backend API)
-  images: {
-    remotePatterns: [
+  // Proxy /uploads requests to the backend API so next/image can
+  // use local paths (validated against localPatterns, which allows all
+  // by default) instead of absolute URLs that require remotePatterns.
+  async rewrites() {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+    return [
       {
-        protocol: 'http',
-        hostname: 'localhost',
-        port: '3000',
-        pathname: '/uploads/**',
+        source: '/uploads/:path*',
+        destination: `${apiUrl}/uploads/:path*`,
       },
-      {
-        protocol: 'https',
-        hostname: '**',
-      },
-    ],
+    ];
   },
 };
 

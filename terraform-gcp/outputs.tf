@@ -75,6 +75,11 @@ output "artifact_registry_repository" {
   value       = google_artifact_registry_repository.images.repository_id
 }
 
+output "artifact_registry_url" {
+  description = "Full Artifact Registry Docker URL prefix for tagging images."
+  value       = "${google_artifact_registry_repository.images.location}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.images.repository_id}"
+}
+
 output "cicd_sa_key_json" {
   description = "Raw JSON key for the CI/CD service account — set as GCP_SA_KEY_JSON GitHub secret."
   value       = base64decode(google_service_account_key.cicd.private_key)
